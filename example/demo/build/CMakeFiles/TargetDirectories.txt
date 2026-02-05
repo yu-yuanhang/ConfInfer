@@ -1,0 +1,3 @@
+/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/example/demo/build/CMakeFiles/demo.dir
+/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/example/demo/build/CMakeFiles/edit_cache.dir
+/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/example/demo/build/CMakeFiles/rebuild_cache.dir

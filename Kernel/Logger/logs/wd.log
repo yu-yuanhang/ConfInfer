@@ -1,0 +1,33 @@
+2026-01-21 13:33:30,734 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/Layer.cc:Layer:17] LayerType type
+2026-01-21 13:33:30,734 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/ops/convolution.cc:Conv2d:23] Conv2d(UINT channel, UINT num, ...) : _id = 0
+2026-01-21 13:33:30,734 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/Layer.cc:Layer:17] LayerType type
+2026-01-21 13:33:30,734 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/ops/convolution.cc:Conv2d:23] Conv2d(UINT channel, UINT num, ...) : _id = 1
+2026-01-21 13:33:30,734 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/Layer.cc:Layer:17] LayerType type
+2026-01-21 13:33:30,734 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/ops/convolution.cc:Conv2d:23] Conv2d(UINT channel, UINT num, ...) : _id = 2
+2026-01-21 13:40:03,444 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/Layer.cc:Layer:17] LayerType type
+2026-01-21 13:40:03,444 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/ops/convolution.cc:Conv2d:23] Conv2d(UINT channel, UINT num, ...) : _id = 0
+2026-01-21 13:40:03,444 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/Layer.cc:Layer:17] LayerType type
+2026-01-21 13:40:03,444 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/ops/convolution.cc:Conv2d:23] Conv2d(UINT channel, UINT num, ...) : _id = 1
+2026-01-21 13:40:03,444 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/Layer.cc:Layer:17] LayerType type
+2026-01-21 13:40:03,444 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/ops/convolution.cc:Conv2d:23] Conv2d(UINT channel, UINT num, ...) : _id = 2
+2026-01-21 13:40:09,272 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/Layer.cc:Layer:17] LayerType type
+2026-01-21 13:40:09,272 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/ops/convolution.cc:Conv2d:23] Conv2d(UINT channel, UINT num, ...) : _id = 0
+2026-01-21 13:40:09,272 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/Layer.cc:Layer:17] LayerType type
+2026-01-21 13:40:09,272 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/ops/convolution.cc:Conv2d:23] Conv2d(UINT channel, UINT num, ...) : _id = 1
+2026-01-21 13:40:09,272 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/Layer.cc:Layer:17] LayerType type
+2026-01-21 13:40:09,272 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/ops/convolution.cc:Conv2d:23] Conv2d(UINT channel, UINT num, ...) : _id = 2
+2026-01-21 13:40:35,480 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/Layer.cc:Layer:17] LayerType type
+2026-01-21 13:40:35,480 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/ops/convolution.cc:Conv2d:23] Conv2d(UINT channel, UINT num, ...) : _id = 0
+2026-01-21 13:40:35,480 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/Layer.cc:Layer:17] LayerType type
+2026-01-21 13:40:35,480 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/ops/convolution.cc:Conv2d:23] Conv2d(UINT channel, UINT num, ...) : _id = 1
+2026-01-21 13:40:35,480 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/Layer.cc:Layer:17] LayerType type
+2026-01-21 13:40:35,480 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/ops/convolution.cc:Conv2d:23] Conv2d(UINT channel, UINT num, ...) : _id = 2
+2026-01-21 13:40:53,090 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/ops/convolution.cc:Conv2d:23] Conv2d(UINT channel, UINT num, ...) : _id = 0
+2026-01-21 13:40:53,090 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/ops/convolution.cc:Conv2d:23] Conv2d(UINT channel, UINT num, ...) : _id = 1
+2026-01-21 13:40:53,090 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/ops/convolution.cc:Conv2d:23] Conv2d(UINT channel, UINT num, ...) : _id = 2
+2026-01-21 13:40:53,090 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/Layer.cc:operator():39] Layer::operator()(Value_t &value)
+2026-01-21 13:40:53,090 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/Layer.cc:bind_inputs:25] 111111
+2026-01-21 13:40:53,090 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/Layer.cc:bind_inputs:27] 222222
+2026-01-21 13:42:14,358 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/ops/convolution.cc:Conv2d:23] Conv2d(UINT channel, UINT num, ...) : _id = 0
+2026-01-21 13:42:14,358 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/ops/convolution.cc:Conv2d:23] Conv2d(UINT channel, UINT num, ...) : _id = 1
+2026-01-21 13:42:14,358 cat [DEBUG] [/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/core/ops/convolution.cc:Conv2d:23] Conv2d(UINT channel, UINT num, ...) : _id = 2
