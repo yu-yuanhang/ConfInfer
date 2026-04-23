@@ -18,7 +18,7 @@ namespace Kernel {
 namespace SingleLog4 {
 
 #if LOGCPP_EXT
-#define PATH_TO_WDLOG "/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/TrustInfer/Kernel/Logger/logs/wd.log"
+#define PATH_TO_WDLOG "/home/yyh/2.Programs/2.workplace/optee_qemuv8/optee_doc-3.22.0/CI/ConfInfer/Kernel/Logger/logs/wd.log"
 
 class logger {
 public:
