@@ -9,6 +9,7 @@ namespace Kernel {
 namespace core {
 
 class Conv2d;
+
 class ConvNd_L: 
 virtual public Layer
 {
@@ -34,6 +35,19 @@ protected:
     void makeParams(Params *params) override;
     void makeOutputs() override;
     UINT calcWorkspaceSize() override;
+
+public:
+    UINT inChannels() const { return _inChannels; }
+    UINT outChannels() const { return _outChannels; }
+    UINT groups() const { return _groups; }
+    BOOL biasEnabled() const { return _isBias; }
+    const std::vector<UINT>& kernelSize() const { return _kernelSize; }
+    const std::vector<UINT>& stride() const { return _stride; }
+    const std::vector<INT>& padding() const { return _padding; }
+    const std::vector<UINT>& dilation() const { return _dilation; }
+    UINT inChannelsPerGroup() const { return _inChannelsPerGroup; }
+    UINT outChannelsPerGroup() const { return _outChannelsPerGroup; }
+    UINT spatialDim() const { return _SpatialDim; }
 
 protected:
     UINT _inChannels;
@@ -61,6 +75,12 @@ virtual public OpSignature {
 public:
     Conv2d() = delete;
     ~Conv2d();
+    // channel: 输入通道数.
+    // num: 输出通道数.
+    // size: 卷积核尺寸 kernel_size.
+    // padding: 支持 {pad_h, pad_w} 或 {top, bottom, left, right}.
+    // stride / padding / dilation / groups / isBias / padding_mode
+    // 均与用户侧卷积配置直接对应.
     Conv2d(UINT channel, UINT num,
            const vector<UINT> &size,  // kernel_size 不设置默认值  
            const vector<UINT> &stride = {1, 1},
@@ -88,8 +108,8 @@ public:
                 _groups, _isBias, _padding_mode,
                 _SpatialDim, this);
         EXIT_ERROR_CHECK_EQ(l, nullptr, "(new) heap allocation failed");
-        _layers.push_back(l);
         dealParams(l);
+        _layers.push_back(l);
         return l->link(value, rest...);
     }
 private:

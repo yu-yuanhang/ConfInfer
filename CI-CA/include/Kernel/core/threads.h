@@ -73,7 +73,9 @@ typedef struct SharedContext_s {
     std::mutex mtx; // std::lock_guard<std::mutex> lk(mtx);
     std::condition_variable cv;
 
-    // 不管理其生命周期
+    // Network 级共享 scratch workspace
+    // 当前阶段默认单线程顺序执行，因此所有算子共享同一块临时区。
+    // 它的生命周期由 Network 管理，这里只保存借用指针。
     void    *workspace;
     UINT    wsSize;
 

@@ -7,10 +7,10 @@ static Value_t dummyValue;
 
 Layer::Layer(LayerType type, OpSignature *opSignature):
     _id(_counter++), _type(type), _inTEE(false), _lf(opSignature->flags()),
-    _inputsLNum(INVALID_VALUE_U), _outputsLNum(INVALID_VALUE_U),
+    _inputsLNum(0), _outputsLNum(0),
     _inputsL(), _outputsL(),
     _inputs(), _outputs(),
-    _workspaceSize(INVALID_VALUE_U),
+    _workspaceSize(0),
     _params(nullptr),
     _opSignature(opSignature)
 {
@@ -27,15 +27,21 @@ Layer::Layer(const Layer &rhs) {
 Layer::~Layer() {
     // Layer 生命周期由 OpSignature 管理
     // 这里无需基于 OpSignature._ownParams 判断是否释放 _params
-    _params->release();
-    _params = nullptr;
+    if (_params) {
+        _params->release();
+        _params = nullptr;
+    }
     _opSignature = nullptr;
 }
 
 LayerSlice *Layer::makeSliceDesc(UINT sliceId, UINT sliceNum) {
-    
-    // ......
-    LayerSlice *ls = new LayerSlice();
+    SliceDesc_t desc{};
+    desc.sliceId = sliceId;
+    desc.sliceNum = sliceNum;
+    desc.workspaceOffset = 0;
+    desc.workspaceSize = _workspaceSize;
+
+    LayerSlice *ls = new LayerSlice(this, desc);
 
     return ls;
 }
@@ -67,6 +73,11 @@ Layer& Layer::link(Value_t &value) {
     linkInit();
     return *this;
 }
+Value_t& Layer::input(uint32_t idx) {
+    if (idx < _inputs.size()) { return *(_inputs[idx]); }
+    LogDebug("Error: Input not found");
+    std::exit(EXIT_FAILURE);
+}
 Value_t& Layer::output(OutputKind kind, uint32_t slot) {
     uint32_t count = 0;
     for (auto it = _outputs.begin(); it != _outputs.end(); ++it) {
@@ -81,6 +92,9 @@ Value_t& Layer::output(OutputKind kind, uint32_t slot) {
     std::exit(EXIT_FAILURE);
     // return dummyValue;
 }
+Value_t& Layer::output(OutputKind kind) {
+    return output(kind, 0);
+}
 Value_t& Layer::output(uint32_t idx) {
     if (idx < _outputs.size()) { return *(_outputs[idx]); }
     LogDebug("Error: Output not found");
@@ -91,9 +105,25 @@ Value_t& Layer::output() {
     if (_outputs.empty()) {
         LogDebug("Error: Output not found");
         std::exit(EXIT_FAILURE);
-        // return dummyValue;
     }
-    return *(_outputs[0]);
+    uint32_t default_count = 0;
+    Value_t* default_value = nullptr;
+    for (auto it = _outputs.begin(); it != _outputs.end(); ++it) {
+        Value_t* value = it->get();
+        if (OutputKind::Default == value->kind) {
+            ++default_count;
+            if (1 == default_count) {
+                default_value = value;
+            }
+        }
+    }
+    if (1 == default_count && nullptr != default_value) {
+        return *default_value;
+    }
+    LogDebug("Error: Layer has %zu outputs and no unique default output, use output(idx) or output(kind)",
+             _outputs.size());
+    std::exit(EXIT_FAILURE);
+    return dummyValue;
 }
 std::vector<Value_t*> Layer::outputs(OutputKind kind) {
     std::vector<Value_t*> result;
@@ -123,28 +153,24 @@ OpSignature::~OpSignature() {
         if (l) delete l; // 释放对象 (理论上也不该存在 nullptr 的情况)
         it = _layers.erase(it);  // erase 返回下一个有效迭代器
     }
-    _params->release();
-    _params = nullptr;
+    if (_params) {
+        _params->release();
+        _params = nullptr;
+    }
 }
 
 void OpSignature::dealParams(Layer *l) {
-    // EXIT_ERROR_CHECK_EQ(nullptr, l, "Layer *l == nullptr");
+    EXIT_ERROR_CHECK_EQ(nullptr, l, "Layer *l == nullptr");
 
-    // Params_t 内部存在引用计数 其生命周期释放方式 应该和 _ownParams 解耦
-    // 即对 Layer 和 OpSignature 无感
-    // ...... todo
+    // 一个 OpSignature 可以派生多个 Layer，但共享同一组参数。
+    // 因此参数创建只发生一次，之后所有 Layer 仅绑定同一个 Params 句柄。
     if (_ownParams) {
-        if (nullptr != _params || !_layers.empty()) {
-            if (nullptr != _params) {
-                _params->retain();
-                l->setParams(_params);
-            } 
-            return;
+        if (nullptr == _params) {
+            Params *p = new(std::nothrow) Params();
+            EXIT_ERROR_CHECK_EQ(nullptr, p, "new Params failed");
+            l->makeParams(p);
+            _params = p;
         }
-        Params *p = new(std::nothrow) Params();
-        // EXIT_ERROR_CHECK_EQ(nullptr, p, "new Params failed");
-        l->makeParams(p);
-        _params = p;
 
         _params->retain();
         l->setParams(_params);
@@ -157,4 +183,3 @@ void OpSignature::dealParams(Layer *l) {
 
 } // namespace end of core
 } // namespace end of Kernel 
-

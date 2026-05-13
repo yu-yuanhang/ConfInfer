@@ -7,6 +7,10 @@ ThreadContextManager::ThreadContextManager(UINT num)
     : _num(num), _shared(), _ctxs(), _workers() 
 {
     _ctxs.resize(_num);
+    for (UINT i = 0; i < _num; ++i) {
+        _ctxs.at(i).id = i;
+        _ctxs.at(i).shared = &_shared;
+    }
     setCallerCtx();
 }
 ThreadContextManager::~ThreadContextManager() { clear(); }

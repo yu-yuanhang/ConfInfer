@@ -2,6 +2,7 @@
 #define __GRAPH_H_CA__
 
 #include <core/Layer.h>
+#include <core/GraphSignature.h>
 
 namespace Kernel {
 namespace core {
@@ -15,11 +16,21 @@ namespace core {
 // 拓扑关系在 Layer 之间 而 Graph 只负责 "容器 + 顺序视图"
 class Graph {
 public:
-    Graph() = delete;
-    Graph(Layer &layer);
+    Graph();
+    Graph(const GraphSignature& sig);
+    // initializer_list 接收花括号初始化列表
+    Graph(std::initializer_list<GraphInputSlot> inputs,
+          std::initializer_list<GraphOutputSlot> outputs);
     ~Graph();
 
+    void addInput(const std::string& name, Value_t& value);
+    void addOutput(const std::string& name, Value_t& value);
+    void build();
+
     Layer *operator[](UINT id);
+    const GraphSignature& signature() const { return _sig; }
+    Layer* inputBoundary() const { return _inputBoundary; }
+    Layer* outputBoundary() const { return _outputBoundary; }
 
     // 拓扑构建
     // void add_layer(Layer* layer);
@@ -27,6 +38,7 @@ public:
     // Graph* split(uint32_t begin, uint32_t end);
 
     // 拓扑分析 用于构建执行顺序
+    // ... todo 图构建方式已经改变
     void buildExecutionOrder(Layer *inputL);
     UINT WorkspaceSize();
     bool splittable(UINT num = 0);
@@ -34,7 +46,18 @@ public:
 
 private:
     void dfs_collect(Layer *cur, std::unordered_set<Layer *> &visited);
-    Layer* find_input_node();
+    void checkSig();
+    void collectOuts();
+    void checkInputs();
+    void wireIns();
+    void rebuildLinks();
+
+private:
+    GraphSignature _sig;
+    Layer* _inputBoundary;
+    Layer* _outputBoundary;
+
+
 public:
     UINT _layersNum;
 
@@ -44,12 +67,6 @@ public:
     // unordered_set (Hash 无序 无重复)
     std::unordered_set<Layer *> _layers;
     std::unordered_set<Layer *> _confLayers;
-
-    // 逻辑视角上 每一个 Graph 都至少包含 _input / _output
-    // 逻辑上的 一个输入节点 和 一个输出节点
-    // 这两个节点需要调用者主动构建 并通过 layer.getGraph() 获得 Graph
-    Layer *_inputL;   // 虚拟节点
-    Layer *_outputL;  // 虚拟节点
 
     // Graph 视角需要记录下执行顺序
     std::vector<Layer *> _execOrder;

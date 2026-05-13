@@ -47,8 +47,21 @@ enum PADDING_MODE : uint32_t {
 
 // ADD / MUL / CONCAT 是 "结构级合并" 的最小完备集合
 enum class LayerType : UINT {
+    GRAPH_INPUT,
+    GRAPH_OUTPUT,
     CONV2D,
     MAXPOOL2D,
+    AVGPOOL2D,
+    ADAPTIVEAVGPOOL2D,
+    ADAPTIVEMAXPOOL2D,
+    BATCHNORM2D,
+    LAYERNORM,
+    GROUPNORM,
+    RELU,
+    SIGMOID,
+    DROPOUT,
+    BIASADD,
+    MATMUL,
     LINEAR,
     SOFTMAX,
     // ...
@@ -174,6 +187,13 @@ private:
     void bind_inputs(Value_t &value);
     inline void setParams(Params *params) { _params = params; }
 public:
+    inline LayerType type() const { return _type; }
+    inline UINT id() const { return _id; }
+    inline const Params *params() const { return _params; }
+    inline const Data_t *param(ParamRole role) const {
+        return _params ? _params->get(role) : nullptr;
+    }
+    inline const OpSignature *opSignature() const { return _opSignature; }
     // 这里需要取消拷贝构造带来的问题 
     // 理论上开发者的语义上下文中不该直接获取计算图中的具体节点
     // 所以这里拷贝构造直接 protect/private
@@ -206,7 +226,11 @@ public:
         return *this;
     }
     // 取输出 (单个输出/全部同类输出)
+    Value_t &input(uint32_t idx);
+    inline UINT inputNum() const { return static_cast<UINT>(_inputs.size()); }
+    inline UINT outputNum() const { return static_cast<UINT>(_outputs.size()); }
     Value_t &output(OutputKind kind, uint32_t slot);
+    Value_t &output(OutputKind kind);
     Value_t &output(uint32_t idx);
     Value_t &output();
 
@@ -283,7 +307,7 @@ protected:
 
 class LayerSlice {
 public:
-    LayerSlice() {}
+    LayerSlice(): _layer(nullptr), _desc() {}
     LayerSlice(Layer* layer, SliceDesc_t desc)
         : _layer(layer), _desc(std::move(desc)) {}
 

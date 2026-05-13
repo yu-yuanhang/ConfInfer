@@ -172,16 +172,18 @@ public:
     T *pop_front() {
         Node<T, Owns> *ptr = _head->_next;
         if (ptr == _tail) return nullptr;
-        _ptr->setOwns(false);
+        ptr->setOwns(false);
+        T *data = ptr->getData();
         erase_front();
-        return _ptr->getData();
+        return data;
     }
     T *pop_back() {
         Node<T, Owns> *ptr = _tail->_pre;
         if (ptr == _head) return nullptr;
-        _ptr->setOwns(false);
+        ptr->setOwns(false);
+        T *data = ptr->getData();
         erase_back();
-        return _ptr->getData();
+        return data;
     }
 
     // 调用之前 reset_ptr 重置 _ptr
@@ -221,7 +223,7 @@ bool has_duplicate_address(T* /*unused*/) {
 }
 
 template <typename T, typename... Rest>
-bool has_duplicate_addr(T *first, Rest *...rest) {
+bool has_duplicate_address(T *first, Rest *...rest) {
     // 折叠表达式  判断 first 是否等于后面的任何一个 
     if (((first == rest) || ...)) {
         return true;

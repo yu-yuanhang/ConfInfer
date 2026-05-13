@@ -8,6 +8,9 @@
 #include <thread>
 
 namespace Kernel {
+namespace core {
+class Layer;
+}
 
 template <typename T, size_t N>
 void initArray(T (&arr)[N], const T& value) {
@@ -53,6 +56,15 @@ void fill_random(void *data, core::DataType dtype, int n, uint32_t seed);
 static void zero_buf(float* x, int n);
 static double max_abs_diff(const float* a, const float* b, int n);
 unsigned int getCoreCount();
+void print_shape(const char *name, const core::DataShape_t &shape);
+bool is_zero_filled(core::Value_t &value);
+bool print_zero_check(const char *name, core::Value_t &value);
+bool same_signature(const core::Layer &lhs, const core::Layer &rhs);
+bool same_params(const core::Layer &lhs, const core::Layer &rhs);
+bool print_layer_relation(const char *lhs_name,
+                          const core::Layer &lhs,
+                          const char *rhs_name,
+                          const core::Layer &rhs);
 
 #define TIMESEED (time_seed())
 

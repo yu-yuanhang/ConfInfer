@@ -1,7 +1,17 @@
 #include <core/Network.h>
+#include <core/BoundaryLayer.h>
 
 namespace Kernel {
 namespace core {
+
+Executor::Executor(): _by_kind() {
+    static CpuBackend cpu_backend;
+    setBackends({&cpu_backend});
+}
+
+Executor::~Executor() {
+    _by_kind.clear();
+}
 
 void Executor::setBackends(std::vector<Backend *> backends) {
     _by_kind.clear();
@@ -11,8 +21,11 @@ void Executor::setBackends(std::vector<Backend *> backends) {
 }
 void Executor::execute_layer(LayerSlice* ls, ThreadCtx_t* ctx)
 {
+    EXIT_ERROR_CHECK_EQ(nullptr, ls, "LayerSlice is nullptr");
     uint32_t lf = ls->layer()->flags();
-    route(lf)->execute(ls, ctx);
+    Backend *backend = route(lf);
+    EXIT_ERROR_CHECK_EQ(nullptr, backend, "No available backend for layer");
+    backend->execute(ls, ctx);
     return;
 }
 Backend *Executor::route(uint32_t lf) {
@@ -35,19 +48,25 @@ Backend *Executor::route(uint32_t lf) {
 
 Network::Network(Graph &graph):
     _fullGraph(&graph),
-    _workspace(static_cast<void*>(new char[graph.WorkspaceSize()])),
+    _workspace(nullptr),
     _wsSize(graph.WorkspaceSize()),
-    _nets{}, _netNum(INVALID_VALUE_U) 
+    _nets{}, _netNum(1) 
 {
-
+    if (_wsSize) {
+        _workspace = static_cast<void*>(new char[_wsSize]);
+    }
+    split(_netNum);
 }
 
 Network::Network(Graph &graph, const ThreadContextManager *tcm):
     _fullGraph(&graph),
-    _workspace(static_cast<void*>(new char[graph.WorkspaceSize()])),
+    _workspace(nullptr),
     _wsSize(graph.WorkspaceSize()),
     _nets{}, _netNum(tcm->size())
 {
+    if (_wsSize) {
+        _workspace = static_cast<void*>(new char[_wsSize]);
+    }
     // 这个版本的 构造函数 在这里绑定 ThreadContextManager
     // 因此可以提前初始化 net[MAX_CORES_NUM] 
     // _netNum = tcm->size();
@@ -117,21 +136,13 @@ void Network::prepare(ThreadContextManager *tcm, Executor *exec) {
     return;
 }
 
-void Network::run(Value_t &value, ThreadContextManager *tcm, Executor *exec) {
+void Network::runNet(ThreadContextManager *tcm, Executor *exec) {
     Net_t &net = _nets[0];
-    Layer *layer = nullptr;
 
     ThreadCtx_t &ctx = *(tcm->caller_ctx());
     SharedContext_t *shared = ctx.shared;
     unsigned total_threads = tcm->size();
-    // UINT prev = INVALID_UINT_MAX;
     UINT curr = INVALID_UINT_MAX;
-
-    // ...... value 初始化第一个 layer 的 inputs
-
-    // 初始化共享状态
-    // shared->stop_flag.store(false, std::memory_order_relaxed);
-    // shared->finished_cnt.store(0, std::memory_order_relaxed);
 
     // 主线程进入默认是持有锁的状态
     curr = 0;
@@ -146,8 +157,12 @@ void Network::run(Value_t &value, ThreadContextManager *tcm, Executor *exec) {
         }
         shared->cv.notify_all();
 
-        *it = net.sliceExecOrder.at(curr);
-        // ......  execute_layer(layer);
+        exec->execute_layer(*it, &ctx);
+        if (shared->finished_cnt.fetch_add(1, std::memory_order_acq_rel)
+                == total_threads - 1) {
+            std::lock_guard<std::mutex> lk(shared->mtx);
+            shared->cv.notify_all();
+        }
 
         { 
             std::unique_lock<std::mutex> lk(shared->mtx); 
@@ -157,6 +172,44 @@ void Network::run(Value_t &value, ThreadContextManager *tcm, Executor *exec) {
         // prev = curr;
     }
     shared->mtx.lock();
+}
+
+void Network::run(std::initializer_list<Value_t*> inputs,
+                  std::initializer_list<Value_t*> outputs,
+                  ThreadContextManager *tcm, Executor *exec) {
+    std::vector<Value_t*> input_vec(inputs.begin(), inputs.end());
+    std::vector<Value_t*> output_vec(outputs.begin(), outputs.end());
+    run(input_vec, output_vec, tcm, exec);
+}
+
+void Network::run(const std::vector<Value_t*>& inputs, std::vector<Value_t*>& outputs,
+                  ThreadContextManager *tcm, Executor *exec) {
+    const GraphSignature& sig = _fullGraph->signature();
+    EXIT_ERROR_CHECK_NE(inputs.size(), sig.inputs.size(), "Network input size mismatch");
+    EXIT_ERROR_CHECK_NE(outputs.size(), sig.outputs.size(), "Network output size mismatch");
+
+    Layer* in_boundary = _fullGraph->inputBoundary();
+    EXIT_ERROR_CHECK_EQ(nullptr, in_boundary, "Graph input boundary is nullptr");
+
+    // 这里还是重新把 输入数据的一些 属性信息复制了一遍
+    // 但是理论上目前 基本上输入的结构大小等等都是固定的
+    for (UINT i = 0; i < sig.inputs.size(); ++i) {
+        EXIT_ERROR_CHECK_EQ(nullptr, inputs[i], "Network input value is nullptr");
+        Value_t& v = in_boundary->output(i);
+        v.borrowFrom(*inputs[i], PARAM_INPUT);
+    }
+
+    runNet(tcm, exec);
+
+    Layer* out_boundary = _fullGraph->outputBoundary();
+    EXIT_ERROR_CHECK_EQ(nullptr, out_boundary, "Graph output boundary is nullptr");
+    GraphOutputLayer* out_layer = static_cast<GraphOutputLayer*>(out_boundary);
+
+    for (UINT i = 0; i < sig.outputs.size(); ++i) {
+        EXIT_ERROR_CHECK_EQ(nullptr, outputs[i], "Network output value is nullptr");
+        Value_t& value = out_layer->input(i);
+        outputs[i]->deepCopyFrom(value, PARAM_OUTPUT);
+    }
 }
 
 
@@ -171,17 +224,14 @@ void Network::run(Value_t &value, ThreadContextManager *tcm, Executor *exec) {
 void Network::worker_loop(ThreadCtx_t &ctx, Executor *exec, void *Args) {
     Net_t &net = *static_cast<Net_t *>(Args);
     LayerSlice *ls = nullptr;
-    Layer *layer = nullptr;
 
     SharedContext_t *shared = ctx.shared;
     unsigned total_threads = RUNTIME->size();
     UINT prev = INVALID_UINT_MAX;
     UINT curr = INVALID_UINT_MAX;
     
-    EventPayload sig = 0;
-    
     if (shared->start_flag.load(std::memory_order_relaxed)) {
-        sig = ctx.read();
+        ctx.read();
         ctx.write(make_event(ThreadMsg::PONG));
     }
 
@@ -206,16 +256,14 @@ void Network::worker_loop(ThreadCtx_t &ctx, Executor *exec, void *Args) {
 
         curr = shared->current_layer.load(std::memory_order_acquire);
         ls = net.sliceExecOrder.at(curr);
-        // layer = net[layer_id];
-        // 执行该 Layer (exec -> )
-        // execute_layer(layer);
+        exec->execute_layer(ls, &ctx);
 
         // 更新 prev 避免重复执行
         prev = curr;
-        if (shared->finished_cnt.fetch_add(1, std::memory_order_relaxed) 
+        if (shared->finished_cnt.fetch_add(1, std::memory_order_acq_rel) 
                 == total_threads -1) {
             std::lock_guard<std::mutex> lk(shared->mtx);
-            shared->cv.notify_one();
+            shared->cv.notify_all();
         }
     }
 }

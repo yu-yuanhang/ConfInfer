@@ -3,6 +3,30 @@
 namespace Kernel {
 namespace core {
 
+namespace {
+
+static void parse_conv_padding_2d(const std::vector<INT>& padding,
+                                  UINT spatial_dim,
+                                  UINT dim,
+                                  INT& pad_l,
+                                  INT& pad_r) {
+    EXIT_ERROR_CHECK_NE(spatial_dim, 2, "ConvNd padding parser only supports 2D");
+    EXIT_ERROR_CHECK_EQ(false,
+        padding.size() == spatial_dim || padding.size() == 2 * spatial_dim,
+        "ConvNd padding size must be SpatialDim or 2*SpatialDim");
+
+    if (padding.size() == spatial_dim) {
+        pad_l = padding[dim];
+        pad_r = padding[dim];
+        return;
+    }
+
+    pad_l = padding[2 * dim + 0];
+    pad_r = padding[2 * dim + 1];
+}
+
+} // namespace
+
 ConvNd_L::~ConvNd_L() {}
 Conv2d::~Conv2d() {}
 
@@ -42,28 +66,34 @@ void ConvNd_L::makeOutputs() {
     );
 
     const DataShape_t& inShape = input->data.shape;
-    // inShape: [C_in, I1, I2, ...]
-    EXIT_ERROR_CHECK_EQ(
+    EXIT_ERROR_CHECK_NE(
         inShape.ndim,
-        static_cast<uint32_t>(_SpatialDim + 1),
-        "ConvNd input shape dim mismatch"
+        static_cast<uint32_t>(_SpatialDim + 2),
+        "ConvNd expects NCHW input shape"
     );
+    const UINT batch_axis = 0u;
+    const UINT channel_axis = 1u;
+    const UINT spatial_axis = 2u;
 
     // ConvNd 默认的输出 Value 个数为 1
     std::unique_ptr<Value_t> out = std::make_unique<Value_t>(PARAM_INTERMEDIATE | PARAM_OWN_DATA);
     
     DataShape_t &outShape = (out->data.shape);
-    outShape.ndim = _SpatialDim + 1;
-    outShape.dims[0] = _outChannels;
-    outShape.size = _outChannels;
+    outShape.ndim = inShape.ndim;
+    outShape.size = 1;
+    outShape.dims[batch_axis] = inShape.dims[batch_axis];
+    outShape.size *= outShape.dims[batch_axis];
+    outShape.dims[channel_axis] = _outChannels;
+    outShape.size *= _outChannels;
     for (UINT d = 0; d < _SpatialDim; ++d) {
-        UINT I = inShape.dims[d + 1];
+        UINT I = inShape.dims[spatial_axis + d];
         UINT K = _kernelSize[d];
         UINT S = _stride[d];
         UINT D = _dilation[d];
 
-        INT pad_l = _padding[2 * d + 0];
-        INT pad_r = _padding[2 * d + 1];
+        INT pad_l = 0;
+        INT pad_r = 0;
+        parse_conv_padding_2d(_padding, _SpatialDim, d, pad_l, pad_r);
 
         INT O = (INT)(
             (I + pad_l + pad_r
@@ -72,16 +102,16 @@ void ConvNd_L::makeOutputs() {
         ) + 1;
         EXIT_ERROR_CHECK_NE(true, O > 0, "ConvNd output size <= 0");
 
-        outShape.dims[d + 1] = (UINT)O;
+        outShape.dims[spatial_axis + d] = (UINT)O;
         outShape.size *= (UINT)O;
     }
 
     // Param 初始化
     Data_t &data  = out->data;
-    data.dtype     = input->data.dtype;     // 通常保持一致
-    data.location  = input->data.location;  // 跟随输入
+    data.copyTypeFrom(input->data);         // 通常跟随输入
     // out->param.data     = nullptr;
-    data.ptr = new(std::nothrow) char(data.shape.size * data.getTypeSize());
+    data.ptr = new(std::nothrow) char[data.shape.size * data.getTypeSize()];
+    EXIT_ERROR_CHECK_EQ(nullptr, data.ptr, "ConvNd output allocation failed");
 
     // Value 元信息
     out->producer     = this;
@@ -96,9 +126,43 @@ void ConvNd_L::makeOutputs() {
     return;
 }
 UINT ConvNd_L::calcWorkspaceSize() {
-    // ...... 
-    // 返回值需要转化为 / B
-    return 0;
+    EXIT_ERROR_CHECK_NE(
+        1, _inputs.size(),
+        "ConvNd only supports a single input Value"
+    );
+    Value_t* input = _inputs[0];
+    EXIT_ERROR_CHECK_EQ(nullptr, input, "ConvNd input is nullptr");
+
+    const DataShape_t& inShape = input->data.shape;
+    EXIT_ERROR_CHECK_NE(
+        inShape.ndim,
+        static_cast<uint32_t>(_SpatialDim + 2),
+        "ConvNd expects NCHW input shape"
+    );
+
+    UINT out_spatial = 1;
+    for (UINT d = 0; d < _SpatialDim; ++d) {
+        const UINT I = inShape.dims[2 + d];
+        const UINT K = _kernelSize[d];
+        const UINT S = _stride[d];
+        const UINT D = _dilation[d];
+        INT pad_l = 0;
+        INT pad_r = 0;
+        parse_conv_padding_2d(_padding, _SpatialDim, d, pad_l, pad_r);
+
+        const INT O = static_cast<INT>(
+            (I + pad_l + pad_r - static_cast<INT>(D) * (static_cast<INT>(K) - 1) - 1)
+            / static_cast<INT>(S)
+        ) + 1;
+        EXIT_ERROR_CHECK_NE(true, O > 0, "ConvNd output size <= 0");
+        out_spatial *= static_cast<UINT>(O);
+    }
+
+    UINT kernel_area = 1;
+    for (auto it = _kernelSize.begin(); it != _kernelSize.end(); ++it) {
+        kernel_area *= *it;
+    }
+    return _inChannelsPerGroup * kernel_area * out_spatial * sizeof(FLOAT);
 }
 void ConvNd_L::makeParams(Params *params) {
     EXIT_ERROR_CHECK_EQ(nullptr, params, "Params_t *params == nullptr");
@@ -126,7 +190,7 @@ void ConvNd_L::makeParams(Params *params) {
     for (int i = 0; i < weight->shape.ndim; ++i) {
         weight->shape.size *= weight->shape.dims[i];
     }
-    weight->ptr = new(std::nothrow) char(weight->shape.size * weight->getTypeSize());
+    weight->ptr = new(std::nothrow) char[weight->shape.size * weight->getTypeSize()];
     fill_random(weight->ptr, weight->dtype, weight->shape.size, TIMESEED);
 
     params->insert(ParamRole::WEIGHT, weight);
@@ -139,7 +203,7 @@ void ConvNd_L::makeParams(Params *params) {
         bias->shape.dims[0] = _outChannels; // bias 一维向量 长度 = out_channels
         bias->shape.size = _outChannels;
 
-        bias->ptr = new(std::nothrow) char(bias->shape.size * bias->getTypeSize());
+        bias->ptr = new(std::nothrow) char[bias->shape.size * bias->getTypeSize()];
         fill_random(bias->ptr, bias->dtype, bias->shape.size, TIMESEED);
 
         params->insert(ParamRole::BIAS, bias);
@@ -177,8 +241,8 @@ Layer &Conv2d::operator()(Value_t &value) {
             _groups, _isBias, _padding_mode,
             _SpatialDim, this);
     EXIT_ERROR_CHECK_EQ(l, nullptr, "(new) heap allocation failed");
-    _layers.push_back(l);
     dealParams(l);
+    _layers.push_back(l);
     return l->link(value);
 }
 

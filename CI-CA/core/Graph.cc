@@ -1,31 +1,260 @@
 #include <core/Graph.h>
+#include <core/BoundaryLayer.h>
 
 namespace Kernel {
 namespace core {
 
-// 利用 Layer* _output; (graph 中的逻辑上输出节点作为输入)
-// 逆向遍历构建图
-Graph::Graph(Layer &layer):
+// 匿名命名空间 这里也没有必要写到通用工具函数中
+namespace {
+bool has_input(const std::vector<GraphInputSlot>& inputs, Value_t* v) {
+    for (auto it = inputs.begin(); it != inputs.end(); ++it) {
+        if (it->value == v) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool has_output_name_dup(const std::vector<GraphOutputSlot>& outputs) {
+    std::unordered_set<std::string> names;
+    names.reserve(outputs.size());
+    for (auto it = outputs.begin(); it != outputs.end(); ++it) {
+        if (!names.insert(it->name).second) {
+            return true;
+        }
+    }
+    return false;
+}
+} // namespace
+
+Graph::Graph():
+    _sig(),
+    _inputBoundary(nullptr), _outputBoundary(nullptr),
     _layersNum(INVALID_VALUE_U),
     _layers(), _confLayers(),
-    _inputL(nullptr), _outputL(&layer),
-    _execOrder()
-{
-    EXIT_ERROR_CHECK_NE(0, layer._outputsL.size(),
-                        "The input must be a logical output node");
-    
-    // DFS 从输出节点逆向收集所有 Layer
-    std::unordered_set<Layer*> visited;
-    dfs_collect(_outputL, visited);
+    _execOrder() {}
+
+Graph::Graph(const GraphSignature& sig):
+    Graph() {
+    _sig = sig;
+    build();
+}
+
+Graph::Graph(std::initializer_list<GraphInputSlot> inputs,
+             std::initializer_list<GraphOutputSlot> outputs):
+    Graph() {
+    for (auto it = inputs.begin(); it != inputs.end(); ++it) {
+        _sig.inputs.push_back(*it);
+    }
+    for (auto it = outputs.begin(); it != outputs.end(); ++it) {
+        _sig.outputs.push_back(*it);
+    }
+    build();
+}
+
+void Graph::addInput(const std::string& name, Value_t& value) {
+    _sig.inputs.emplace_back(name, value);
+}
+
+void Graph::addOutput(const std::string& name, Value_t& value) {
+    _sig.outputs.emplace_back(name, value);
+}
+
+void Graph::build() {
+    EXIT_ERROR_CHECK_NE(nullptr, _inputBoundary, "Graph has already been built");
+    EXIT_ERROR_CHECK_NE(nullptr, _outputBoundary, "Graph has already been built");
+
+    checkSig();
+    collectOuts();
+    checkInputs();
+
+    std::vector<Value_t*> input_vals;
+    input_vals.reserve(_sig.inputs.size());
+    for (auto it = _sig.inputs.begin(); it != _sig.inputs.end(); ++it) {
+        input_vals.push_back(it->value);
+    }
+    _inputBoundary = new GraphInputLayer(input_vals);
+
+    std::vector<Value_t*> output_vals;
+    output_vals.reserve(_sig.outputs.size());
+    for (auto it = _sig.outputs.begin(); it != _sig.outputs.end(); ++it) {
+        output_vals.push_back(it->value);
+    }
+    _outputBoundary = new GraphOutputLayer(output_vals);
+
+    wireIns();
+    _layers.insert(_inputBoundary);
+    _layers.insert(_outputBoundary);
+    rebuildLinks();
 
     _layersNum = static_cast<UINT>(_layers.size());
-    _inputL = find_input_node();
 
-    buildExecutionOrder(_inputL);   // 这里检测了是否为 单入口 / 单出口
+    buildExecutionOrder(_inputBoundary);
 }
 
 Graph::~Graph() {
+    if (_inputBoundary) {
+        std::unordered_map<Value_t*, Value_t*> remap;
+        remap.reserve(_sig.inputs.size());
 
+        for (UINT i = 0; i < _sig.inputs.size(); ++i) {
+            remap[&_inputBoundary->output(i)] = _sig.inputs[i].value;
+        }
+
+        for (auto layer_it = _layers.begin(); layer_it != _layers.end(); ++layer_it) {
+            Layer* l = *layer_it;
+            if (l == _inputBoundary || l == _outputBoundary) {
+                continue;
+            }
+            for (auto in_it = l->_inputs.begin(); in_it != l->_inputs.end(); ++in_it) {
+                auto it = remap.find(*in_it);
+                if (it != remap.end()) {
+                    *in_it = it->second;
+                }
+            }
+        }
+    }
+
+    _layers.erase(_inputBoundary);
+    _layers.erase(_outputBoundary);
+    if (!_layers.empty()) {
+        rebuildLinks();
+    }
+    _execOrder.clear();
+    _layersNum = static_cast<UINT>(_layers.size());
+
+    delete _inputBoundary;
+    _inputBoundary = nullptr;
+    delete _outputBoundary;
+    _outputBoundary = nullptr;
+}
+
+void Graph::checkSig() {
+    EXIT_ERROR_CHECK_EQ(true, _sig.outputs.empty(), "Graph outputs must not be empty");
+    EXIT_ERROR_CHECK_EQ(true, has_output_name_dup(_sig.outputs), "Graph output names must be unique");
+
+    for (auto it = _sig.outputs.begin(); it != _sig.outputs.end(); ++it) {
+        EXIT_ERROR_CHECK_EQ(nullptr, it->value, "Graph output value is nullptr");
+        // 这里存在一种特殊的情况 Value_t 同时是 input output 
+        // 这时 output 就不存在 producer 的情况 
+        // 但是当前也用不到 就之后遇到了再说吧
+        EXIT_ERROR_CHECK_EQ(nullptr, it->value->producer, "Graph output must have a producer layer");
+    }
+
+    for (auto it = _sig.inputs.begin(); it != _sig.inputs.end(); ++it) {
+        EXIT_ERROR_CHECK_EQ(nullptr, it->value, "Graph input value is nullptr");
+    }
+}
+
+void Graph::collectOuts() {
+    std::unordered_set<Layer*> visited;
+    for (auto it = _sig.outputs.begin(); it != _sig.outputs.end(); ++it) {
+        dfs_collect(it->value->producer, visited);
+    }
+}
+
+void Graph::checkInputs() {
+    // 主要检查输入不完整的情况 
+    // graph 是否还存在 其他没有被 GraphSignature 记录的输入 
+    for (auto layer_it = _layers.begin(); layer_it != _layers.end(); ++layer_it) {
+        Layer* l = *layer_it;
+        for (auto value_it = l->_inputs.begin(); value_it != l->_inputs.end(); ++value_it) {
+            Value_t* v = *value_it;
+            if (nullptr == v->producer) {
+                EXIT_ERROR_CHECK_EQ(false, has_input(_sig.inputs, v),
+                    "Found external input Value not declared in GraphSignature");
+            }
+        }
+    }
+
+    for (auto it = _sig.outputs.begin(); it != _sig.outputs.end(); ++it) {
+        EXIT_ERROR_CHECK_EQ(
+            false,
+            _layers.count(it->value->producer) > 0,
+            "Graph output producer is not in graph"
+        );
+    }
+
+    // 检查输入 unused 的情况
+    for (auto it = _sig.inputs.begin(); it != _sig.inputs.end(); ++it) {
+        bool used = false;
+        for (auto layer_it = _layers.begin(); layer_it != _layers.end(); ++layer_it) {
+            Layer* l = *layer_it;
+            for (auto value_it = l->_inputs.begin(); value_it != l->_inputs.end(); ++value_it) {
+                if (*value_it == it->value) {
+                    used = true; break;
+                }
+            }
+            if (used) { break; }
+        }
+        EXIT_ERROR_CHECK_EQ(false, used, "Declared graph input is not used");
+    }
+}
+
+// 绑定输入数据 依赖关系
+void Graph::wireIns() {
+    std::unordered_map<Value_t*, Value_t*> remap;
+    remap.reserve(_sig.inputs.size());
+    for (UINT i = 0; i < _sig.inputs.size(); ++i) {
+        remap[_sig.inputs[i].value] = &_inputBoundary->output(i);
+    }
+
+    for (auto layer_it = _layers.begin(); layer_it != _layers.end(); ++layer_it) {
+        Layer* l = *layer_it;
+        for (auto in_it = l->_inputs.begin(); in_it != l->_inputs.end(); ++in_it) {
+            auto it = remap.find(*in_it);
+            if (it != remap.end()) {
+                *in_it = it->second;
+            }
+        }
+    }
+}
+
+void Graph::rebuildLinks() {
+    for (auto layer_it = _layers.begin(); layer_it != _layers.end(); ++layer_it) {
+        Layer* l = *layer_it;
+        while (!l->_inputsL.empty()) {
+            l->_inputsL.erase_front();
+        }
+        while (!l->_outputsL.empty()) {
+            l->_outputsL.erase_front();
+        }
+        l->_inputsLNum = 0;
+        l->_outputsLNum = 0;
+    }
+
+    for (auto it = _sig.inputs.begin(); it != _sig.inputs.end(); ++it) {
+        if (it->value) {
+            it->value->consumers.clear();
+        }
+    }
+    for (auto layer_it = _layers.begin(); layer_it != _layers.end(); ++layer_it) {
+        Layer* l = *layer_it;
+        for (auto out_it = l->_outputs.begin(); out_it != l->_outputs.end(); ++out_it) {
+            (*out_it)->consumers.clear();
+        }
+    }
+
+    for (auto layer_it = _layers.begin(); layer_it != _layers.end(); ++layer_it) {
+        Layer* l = *layer_it;
+        for (auto value_it = l->_inputs.begin(); value_it != l->_inputs.end(); ++value_it) {
+            Value_t* v = *value_it;
+            if (!v) {
+                continue;
+            }
+            if (v->producer) {
+                if (!l->_inputsL.contains(v->producer)) {
+                    l->_inputsL.push_back(v->producer);
+                    ++l->_inputsLNum;
+                }
+                if (!v->producer->_outputsL.contains(l)) {
+                    v->producer->_outputsL.push_back(l);
+                    ++v->producer->_outputsLNum;
+                }
+            }
+            v->consumers.push_back(l);
+        }
+    }
 }
 
 Layer *Graph::operator[](UINT id) {
@@ -33,18 +262,10 @@ Layer *Graph::operator[](UINT id) {
     return _execOrder[id];
 }
 
-
 void Graph::buildExecutionOrder(Layer *inputL) {
     EXIT_ERROR_CHECK_EQ(nullptr, inputL, "Input layer is null");
     _execOrder.clear();
 
-    // 用于辅助检查 是否为 单出口
-    // 因为 dfs_collect() 中是从 out 节点开始基于入度向前 深度优先遍历 计算图
-    // 因此 _layers map 中的节点 总入度 <= 总出度 下面需要检查两个方面
-    // 1. _layers 是否存在多个 入度为 0 的 layer (导致遍历不全)
-    // 2. _layers 的 Layer 是否存在不合法的 出度 (出度所指的 Layer 不在 _Layers 中)
-
-    // 构建 shadow 入度表
     std::unordered_map<Layer *, UINT> indegree;
     indegree.reserve(_layers.size());
     for (auto it = _layers.begin(); it != _layers.end(); ++it) {
@@ -52,11 +273,10 @@ void Graph::buildExecutionOrder(Layer *inputL) {
         indegree[l] = l->_inputsLNum;
     }
 
-    // 这里基于 Graph 的设计逻辑 每个计算图 有且仅有一个入度为 0 的 inputL
-    EXIT_ERROR_CHECK_NE(0, indegree[_inputL], 
-        "Input layer indegree is not zero");
+    EXIT_ERROR_CHECK_NE(0, indegree[inputL], "Input layer indegree is not zero");
+
     List<Layer, false> readyQ;
-    readyQ.push_back(_inputL);
+    readyQ.push_back(inputL);
 
     while (!readyQ.empty()) {
         Layer *cur = readyQ.pop_front();
@@ -65,14 +285,9 @@ void Graph::buildExecutionOrder(Layer *inputL) {
         for (auto it = cur->_outputsL.begin(); it != cur->_outputsL.end(); ++it) {
             Layer *next = *it;
             auto degIt = indegree.find(next);
-            // 2. _layers 的 Layer 是否存在不合法的 出度 (出度所指的 Layer 不在 _Layers 中)
-            EXIT_ERROR_CHECK_EQ(degIt, indegree.end(), 
-            "Broken graph: output layer not in graph");
+            EXIT_ERROR_CHECK_EQ(degIt, indegree.end(), "Broken graph: output layer not in graph");
 
             UINT &deg = degIt->second;
-            // EXIT_ERROR_CHECK_EQ(0, deg, 
-            //     "Broken graph: indegree underflow");
-
             deg--;
             if (0 == deg) {
                 readyQ.push_back(next);
@@ -80,11 +295,10 @@ void Graph::buildExecutionOrder(Layer *inputL) {
             }
         }
     }
-    // 1. _layers 是否存在多个 入度为 0 的 layer (导致遍历不全)
-    EXIT_ERROR_CHECK_NE(_execOrder.size(), _layers.size(),
-            "Graph has cycle or unreachable layers");
-    return;
+
+    EXIT_ERROR_CHECK_NE(_execOrder.size(), _layers.size(), "Graph has cycle or unreachable layers");
 }
+
 UINT Graph::WorkspaceSize() {
     if (_execOrder.empty()) return 0;
 
@@ -94,6 +308,7 @@ UINT Graph::WorkspaceSize() {
     }
     return wss;
 }
+
 bool Graph::splittable(UINT num) {
     for (auto it = _execOrder.begin(); it != _execOrder.end(); ++it) {
         if (!(*it)->sliceable(num)) return false;
@@ -101,43 +316,28 @@ bool Graph::splittable(UINT num) {
     return true;
 }
 
-// 从某个输出节点开始 深度优先遍历计算图
-// 没有检查 单入口 和 单出口
-void Graph::dfs_collect(Layer *cur, std::unordered_set<Layer *> &visited)
-{   
-    // cur 为空 或是 cur 节点已经被访问过
+std::vector<LayerSlice *> &Graph::getLayerSlices(UINT sliceId, UINT sliceNum) {
+    static thread_local std::vector<LayerSlice *> slices;
+
+    slices.clear();
+    slices.reserve(_execOrder.size());
+
+    for (auto it = _execOrder.begin(); it != _execOrder.end(); ++it) {
+        slices.push_back((*it)->makeSliceDesc(sliceId, sliceNum));
+    }
+    return slices;
+}
+
+void Graph::dfs_collect(Layer *cur, std::unordered_set<Layer *> &visited) {
     if (!cur || visited.count(cur)) return;
     visited.insert(cur);
 
-    // 遍历 inputs（逆向拓扑）
     for (auto it = cur->_inputsL.begin(); it != cur->_inputsL.end(); ++it) {
         dfs_collect(*it, visited);
     }
-    // 收集自己
     _layers.insert(cur);
     if (cur->isInTEE()) _confLayers.insert(cur);
 }
 
-// =================== 找输入节点 ===================
-Layer* Graph::find_input_node()
-{
-    Layer *input = nullptr;
-    BOOL flag = false;
-    for(std::unordered_set<Layer *>::iterator it = _layers.begin();
-        it != _layers.end(); ++it) {
-        if ((*it)->_inputsL.empty()) {
-            // 因为 dfs_collect() 中是从 out 节点开始向前 深度优先遍历 计算图
-            // 因此可能存在多个 入口节点
-            // 这个后面 buildExecutionOrder() 中会进一步检测
-            EXIT_ERROR_CHECK_EQ(true, flag, "Graph has multiple input nodes");
-            flag = true;
-            input = *it;
-        }
-    }
-    EXIT_ERROR_CHECK_EQ(false, flag, "Graph has no input node");
-    return input;
-}
-
-
-} // namespace end of core
-} // namespace end of Kernel 
+} // namespace core
+} // namespace Kernel

@@ -41,7 +41,8 @@ typedef struct Net_s {
     // 但是 LayerSlice 的生命周期是由 Net_s 管理
     std::vector<LayerSlice *> sliceExecOrder;
 
-    // 每 Net 私有 workspace (这里目前用不到)
+    // 每 Net 私有 workspace
+    // 当前阶段暂不参与主执行路径，保留给后续分片 / pipeline / 私有缓存。
     void* workspace;
     UINT  workspace_size;
 
@@ -88,10 +89,15 @@ public:
     void split(UINT netNum);
     // Network 基于指定的上下文运行环境 设置内部的计算图和子网络
     void prepare(ThreadContextManager *tcm = RUNTIME, Executor *exec = EXECUTOR);
-    void run(Value_t &value, ThreadContextManager *tcm = RUNTIME, Executor *exec = EXECUTOR);
+    void run(std::initializer_list<Value_t*> inputs,
+             std::initializer_list<Value_t*> outputs,
+             ThreadContextManager *tcm = RUNTIME, Executor *exec = EXECUTOR);
+    void run(const std::vector<Value_t*>& inputs, std::vector<Value_t*>& outputs,
+             ThreadContextManager *tcm = RUNTIME, Executor *exec = EXECUTOR);
     // void print() const;
 
 private:
+    void runNet(ThreadContextManager *tcm = RUNTIME, Executor *exec = EXECUTOR);
     void worker_loop(ThreadCtx_t &ctx, 
             Executor *exec = EXECUTOR, void *Args = nullptr);
 private:
@@ -107,9 +113,9 @@ private:
  * 决定 执行策略 (单 Net / 多 Net)
  */
     Graph   *_fullGraph;   // 完整图 (用于分析/切分)
-    // 这里有一个关于 数据类型的问题
-    // 为了实现不同 Layer 之间可能的不同数据精度的统一 
-    // _wsSize 单位 1 字节 (包括子网络)
+    // Network 级共享 scratch workspace
+    // 当前阶段默认单线程顺序执行，不做切片，任一时刻只服务当前执行层。
+    // _wsSize 单位 / B
     void    *_workspace;
     UINT    _wsSize;    
 
