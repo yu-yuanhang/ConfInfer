@@ -10,7 +10,10 @@ namespace Kernel {
 namespace backend {
 
 enum class BackendKind : uint8_t {
-    CPU_REE,
+    CPU_REE,        // 当前默认 CPU backend
+    CPU_REE_REF,    // 参考实现 / 基准实现
+    CPU_REE_ALT0,   // 预留给其他 CPU 实现
+    CPU_REE_ALT1,   // 预留给其他 CPU 实现
     CPU_TEE,
     // GPU,
     // NPU,
@@ -22,26 +25,38 @@ public:
     virtual ~Backend() = default;
 
     virtual BackendKind kind() const = 0;
-    // virtual bool supports(const LayerSlice* ls, ThreadCtx_t* ctx) const = 0;
+    virtual void prepare(LayerSlice* ls) = 0;
     virtual void execute(LayerSlice* ls, ThreadCtx_t* ctx) = 0;
 };
 
-class CpuBackend: 
+class Backend_CPU_REE:
 virtual public Backend {
 public:
-    CpuBackend() = default;
-    ~CpuBackend() override = default;
+    Backend_CPU_REE() = default;
+    ~Backend_CPU_REE() override = default;
 
     BackendKind kind() const override { return BackendKind::CPU_REE; }
+    void prepare(LayerSlice* ls) override;
     void execute(LayerSlice* ls, ThreadCtx_t* ctx) override;
 };
-class CpuBackend_TEE: 
+class Backend_CPU_REE_REF:
 virtual public Backend {
 public:
-    CpuBackend_TEE() = default;
-    ~CpuBackend_TEE() override = default;
+    Backend_CPU_REE_REF() = default;
+    ~Backend_CPU_REE_REF() override = default;
+
+    BackendKind kind() const override { return BackendKind::CPU_REE_REF; }
+    void prepare(LayerSlice* ls) override;
+    void execute(LayerSlice* ls, ThreadCtx_t* ctx) override;
+};
+class Backend_CPU_TEE:
+virtual public Backend {
+public:
+    Backend_CPU_TEE() = default;
+    ~Backend_CPU_TEE() override = default;
 
     BackendKind kind() const override { return BackendKind::CPU_TEE; }
+    void prepare(LayerSlice* ls) override;
     void execute(LayerSlice* ls, ThreadCtx_t* ctx) override;
 };
 

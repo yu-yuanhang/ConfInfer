@@ -149,7 +149,7 @@ private:
 // _OPENMP: 表示支持 OpenMP 并行编程 
 
 // #if LOGCPP_EXT
-#if true
+#if false
 #define ARGC_CHECK(argc, num) {\
     if((argc) != (num)) {\
         LogError("args error!");\

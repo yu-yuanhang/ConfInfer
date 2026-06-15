@@ -4,9 +4,10 @@
 namespace Kernel {
 namespace core {
 
-Executor::Executor(): _by_kind() {
-    static CpuBackend cpu_backend;
-    setBackends({&cpu_backend});
+Executor::Executor(): _by_kind(), _preferred_kind(BackendKind::CPU_REE) {
+    static Backend_CPU_REE cpu_backend;
+    static Backend_CPU_REE_REF cpu_ref_backend;
+    setBackends({&cpu_backend, &cpu_ref_backend});
 }
 
 Executor::~Executor() {
@@ -19,17 +20,32 @@ void Executor::setBackends(std::vector<Backend *> backends) {
         _by_kind[(*it)->kind()].push_back(*it);
     }
 }
+
+void Executor::setBackendKind(BackendKind kind) {
+    _preferred_kind = kind;
+}
+
+void Executor::prepare_layer(LayerSlice* ls)
+{
+    EXIT_ERROR_CHECK_EQ(nullptr, ls, "LayerSlice is nullptr");
+    Backend *backend = route(ls->layer()->flags());
+    EXIT_ERROR_CHECK_EQ(nullptr, backend, "No available backend for layer");
+    ls->setBackend(backend);
+    backend->prepare(ls);
+}
 void Executor::execute_layer(LayerSlice* ls, ThreadCtx_t* ctx)
 {
     EXIT_ERROR_CHECK_EQ(nullptr, ls, "LayerSlice is nullptr");
-    uint32_t lf = ls->layer()->flags();
-    Backend *backend = route(lf);
-    EXIT_ERROR_CHECK_EQ(nullptr, backend, "No available backend for layer");
+    Backend *backend = ls->backend();
+    if (nullptr == backend) {
+        prepare_layer(ls);
+        backend = ls->backend();
+    }
     backend->execute(ls, ctx);
     return;
 }
 Backend *Executor::route(uint32_t lf) {
-    BackendKind kind = BackendKind::CPU_REE; // 默认回退 CPU
+    BackendKind kind = _preferred_kind;
 
     if (lf & LF_REQUIRE_TEE) { kind = BackendKind::CPU_TEE; }
     auto it = _by_kind.find(kind);
@@ -37,7 +53,7 @@ Backend *Executor::route(uint32_t lf) {
         // 简单策略: 取第一个后端
         return it->second.front();
     }
-    // 如果没有找到合适的后端，回退到 CPU
+    // 如果没有找到首选后端，回退到默认 CPU
     auto cpu_it = _by_kind.find(BackendKind::CPU_REE);
     if (cpu_it != _by_kind.end() && !cpu_it->second.empty()) {
         return cpu_it->second.front();
@@ -113,6 +129,10 @@ void Network::prepare(ThreadContextManager *tcm, Executor *exec) {
         _nets[i].ctx = tcm->ctx(i);
         tcm->ctx(i)->shared->workspace = _workspace;
         tcm->ctx(i)->shared->wsSize = _wsSize;
+        for (auto it = _nets[i].sliceExecOrder.begin(); it != _nets[i].sliceExecOrder.end(); ++it) {
+            // bind Backend 并执行 Executor::perpare
+            exec->prepare_layer(*it);
+        }
     }
     ThreadCtx_t *ctx = tcm->caller_ctx();
     ctx->shared->start_flag.store(true, std::memory_order_relaxed);
@@ -195,6 +215,17 @@ void Network::run(const std::vector<Value_t*>& inputs, std::vector<Value_t*>& ou
     // 但是理论上目前 基本上输入的结构大小等等都是固定的
     for (UINT i = 0; i < sig.inputs.size(); ++i) {
         EXIT_ERROR_CHECK_EQ(nullptr, inputs[i], "Network input value is nullptr");
+        EXIT_ERROR_CHECK_EQ(nullptr, inputs[i]->data.ptr, "Network input data ptr is nullptr");
+        const Value_t* expected = sig.inputs[i].value;
+        EXIT_ERROR_CHECK_EQ(nullptr, expected, "Graph signature input is nullptr");
+        EXIT_ERROR_CHECK_NE(expected->data.dtype, inputs[i]->data.dtype,
+            "Network input dtype mismatch");
+        EXIT_ERROR_CHECK_NE(expected->data.shape.ndim, inputs[i]->data.shape.ndim,
+            "Network input ndim mismatch");
+        for (UINT d = 0; d < expected->data.shape.ndim; ++d) {
+            EXIT_ERROR_CHECK_NE(expected->data.shape.dims[d], inputs[i]->data.shape.dims[d],
+                "Network input shape mismatch");
+        }
         Value_t& v = in_boundary->output(i);
         v.borrowFrom(*inputs[i], PARAM_INPUT);
     }
@@ -205,6 +236,7 @@ void Network::run(const std::vector<Value_t*>& inputs, std::vector<Value_t*>& ou
     EXIT_ERROR_CHECK_EQ(nullptr, out_boundary, "Graph output boundary is nullptr");
     GraphOutputLayer* out_layer = static_cast<GraphOutputLayer*>(out_boundary);
 
+    // 目前这里的 output 都还默认保持 深拷贝
     for (UINT i = 0; i < sig.outputs.size(); ++i) {
         EXIT_ERROR_CHECK_EQ(nullptr, outputs[i], "Network output value is nullptr");
         Value_t& value = out_layer->input(i);

@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 namespace Kernel {
@@ -135,6 +136,24 @@ FLOAT variance_fp32(const FLOAT* data, UINT size, FLOAT mean) {
         var += diff * diff;
     }
     return var / static_cast<FLOAT>(size);
+}
+
+void mean_variance_fp32(const FLOAT* data,
+                        UINT size,
+                        FLOAT& mean,
+                        FLOAT& var) {
+    mean = 0.0f;
+    FLOAT m2 = 0.0f;
+    UINT count = 0;
+    for (UINT i = 0; i < size; ++i) {
+        ++count;
+        const FLOAT x = data[i];
+        const FLOAT delta = x - mean;
+        mean += delta / static_cast<FLOAT>(count);
+        const FLOAT delta2 = x - mean;
+        m2 += delta * delta2;
+    }
+    var = (count > 0) ? (m2 / static_cast<FLOAT>(count)) : 0.0f;
 }
 
 void normalize_affine_fp32(const FLOAT* input,
@@ -290,6 +309,20 @@ void concat_axis_fp32(const std::vector<const FLOAT*>& inputs,
     }
 }
 
+void build_adaptive_pool_bounds(UINT in_size,
+                                UINT out_size,
+                                UINT* starts,
+                                UINT* ends) {
+    EXIT_ERROR_CHECK_EQ(nullptr, starts, "Adaptive pool starts is nullptr");
+    EXIT_ERROR_CHECK_EQ(nullptr, ends, "Adaptive pool ends is nullptr");
+    EXIT_ERROR_CHECK_EQ(0, out_size, "Adaptive pool out_size must be > 0");
+
+    for (UINT o = 0; o < out_size; ++o) {
+        starts[o] = (o * in_size) / out_size;
+        ends[o] = ((o + 1) * in_size + out_size - 1) / out_size;
+    }
+}
+
 void adaptive_avgpool2d_nchw(const FLOAT* input,
                              FLOAT* output,
                              UINT batch,
@@ -297,7 +330,11 @@ void adaptive_avgpool2d_nchw(const FLOAT* input,
                              UINT in_h,
                              UINT in_w,
                              UINT out_h,
-                             UINT out_w) {
+                             UINT out_w,
+                             const UINT* h_starts,
+                             const UINT* h_ends,
+                             const UINT* w_starts,
+                             const UINT* w_ends) {
     const UINT in_channel_stride = in_h * in_w;
     const UINT out_channel_stride = out_h * out_w;
     const UINT in_batch_stride = channels * in_channel_stride;
@@ -310,11 +347,11 @@ void adaptive_avgpool2d_nchw(const FLOAT* input,
             const FLOAT* in_c = in_n + c * in_channel_stride;
             FLOAT* out_c = out_n + c * out_channel_stride;
             for (UINT oh = 0; oh < out_h; ++oh) {
-                const UINT h_start = static_cast<UINT>(std::floor(static_cast<double>(oh * in_h) / out_h));
-                const UINT h_end = static_cast<UINT>(std::ceil(static_cast<double>((oh + 1) * in_h) / out_h));
+                const UINT h_start = h_starts[oh];
+                const UINT h_end = h_ends[oh];
                 for (UINT ow = 0; ow < out_w; ++ow) {
-                    const UINT w_start = static_cast<UINT>(std::floor(static_cast<double>(ow * in_w) / out_w));
-                    const UINT w_end = static_cast<UINT>(std::ceil(static_cast<double>((ow + 1) * in_w) / out_w));
+                    const UINT w_start = w_starts[ow];
+                    const UINT w_end = w_ends[ow];
                     FLOAT sum = 0.0f;
                     UINT count = 0;
                     for (UINT ih = h_start; ih < h_end; ++ih) {
@@ -338,7 +375,12 @@ void adaptive_maxpool2d_nchw(const FLOAT* input,
                              UINT in_h,
                              UINT in_w,
                              UINT out_h,
-                             UINT out_w) {
+                             UINT out_w,
+                             const UINT* h_starts,
+                             const UINT* h_ends,
+                             const UINT* w_starts,
+                             const UINT* w_ends,
+                             int32_t* indices) {
     const UINT in_channel_stride = in_h * in_w;
     const UINT out_channel_stride = out_h * out_w;
     const UINT in_batch_stride = channels * in_channel_stride;
@@ -347,28 +389,35 @@ void adaptive_maxpool2d_nchw(const FLOAT* input,
     for (UINT n = 0; n < batch; ++n) {
         const FLOAT* in_n = input + n * in_batch_stride;
         FLOAT* out_n = output + n * out_batch_stride;
+        int32_t* idx_n = (nullptr == indices) ? nullptr : (indices + n * out_batch_stride);
         for (UINT c = 0; c < channels; ++c) {
             const FLOAT* in_c = in_n + c * in_channel_stride;
             FLOAT* out_c = out_n + c * out_channel_stride;
+            int32_t* idx_c = (nullptr == idx_n) ? nullptr : (idx_n + c * out_channel_stride);
             for (UINT oh = 0; oh < out_h; ++oh) {
-                const UINT h_start = static_cast<UINT>(std::floor(static_cast<double>(oh * in_h) / out_h));
-                const UINT h_end = static_cast<UINT>(std::ceil(static_cast<double>((oh + 1) * in_h) / out_h));
+                const UINT h_start = h_starts[oh];
+                const UINT h_end = h_ends[oh];
+                FLOAT* out_row = out_c + oh * out_w;
+                int32_t* idx_row = (nullptr == idx_c) ? nullptr : (idx_c + oh * out_w);
                 for (UINT ow = 0; ow < out_w; ++ow) {
-                    const UINT w_start = static_cast<UINT>(std::floor(static_cast<double>(ow * in_w) / out_w));
-                    const UINT w_end = static_cast<UINT>(std::ceil(static_cast<double>((ow + 1) * in_w) / out_w));
-                    FLOAT max_v = input[0];
-                    bool init = false;
+                    const UINT w_start = w_starts[ow];
+                    const UINT w_end = w_ends[ow];
+                    FLOAT max_v = -std::numeric_limits<FLOAT>::infinity();
+                    int32_t max_index = -1;
                     for (UINT ih = h_start; ih < h_end; ++ih) {
                         const FLOAT* row = in_c + ih * in_w;
                         for (UINT iw = w_start; iw < w_end; ++iw) {
-                            const FLOAT v = row[iw];
-                            if (!init || v > max_v) {
-                                max_v = v;
-                                init = true;
+                            const FLOAT value = row[iw];
+                            if (value > max_v) {
+                                max_v = value;
+                                max_index = static_cast<int32_t>(ih * in_w + iw);
                             }
                         }
                     }
-                    out_c[oh * out_w + ow] = max_v;
+                    out_row[ow] = max_v;
+                    if (nullptr != idx_row) {
+                        idx_row[ow] = max_index;
+                    }
                 }
             }
         }

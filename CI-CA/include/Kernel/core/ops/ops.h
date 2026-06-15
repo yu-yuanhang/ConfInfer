@@ -7,5 +7,6 @@
 #include <activation.h>
 #include <arithmetic.h>
 #include <linear.h>
+#include <reshape.h>
 
 #endif

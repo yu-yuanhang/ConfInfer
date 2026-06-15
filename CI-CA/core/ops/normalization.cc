@@ -12,8 +12,6 @@ void init_fill(Data_t* data, FLOAT value) {
 
     data->ptr = new(std::nothrow) char[data->shape.size * data->getTypeSize()];
     EXIT_ERROR_CHECK_EQ(nullptr, data->ptr, "Parameter allocation failed");
-
-    EXIT_ERROR_CHECK_NE(DataType::FP32, data->dtype, "Only FP32 params are supported now");
     FLOAT* ptr = static_cast<FLOAT*>(data->ptr);
     for (UINT i = 0; i < data->shape.size; ++i) {
         ptr[i] = value;

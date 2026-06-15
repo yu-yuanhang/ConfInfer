@@ -20,14 +20,16 @@ file(GLOB MAIN_SOURCES_CPP
     "${CMAKE_CURRENT_SOURCE_DIR}/core/*.cc"
     "${CMAKE_CURRENT_SOURCE_DIR}/core/ops/*.cc"
     "${CMAKE_CURRENT_SOURCE_DIR}/backend/*.cc"
-    "${CMAKE_CURRENT_SOURCE_DIR}/backend/cpu/*.cc"
-    "${CMAKE_CURRENT_SOURCE_DIR}/backend/cpu/math/*.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/backend/cpu_ree/*.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/backend/cpu_ree/math/*.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/backend/cpu_ree_ref/*.cc"
     "${CMAKE_CURRENT_SOURCE_DIR}/Logger/*.cc"
 )
 
 file(GLOB MAIN_SOURCES_C
-    "${CMAKE_CURRENT_SOURCE_DIR}/backend/cpu/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/backend/cpu/math/*.c")
+    "${CMAKE_CURRENT_SOURCE_DIR}/backend/cpu_ree/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/backend/cpu_ree/math/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/backend/cpu_ree_ref/*.c")
 
 message(STATUS "MAIN_SOURCES_CPP = ${MAIN_SOURCES_CPP}")
 message(STATUS "MAIN_SOURCES_C = ${MAIN_SOURCES_C}")

@@ -22,11 +22,16 @@ private:
     Executor();
     ~Executor();
 public:
+    // setBackends 用来注册 哪些 后端能用 
     void setBackends(std::vector<Backend *> backends);
+    void setBackendKind(BackendKind kind);
+    BackendKind backendKind() const { return _preferred_kind; }
+    void prepare_layer(LayerSlice* ls);
     void execute_layer(LayerSlice* ls, ThreadCtx_t* ctx);
     Backend *route(uint32_t lf);
 private:
     std::unordered_map<BackendKind, BackendList> _by_kind;
+    BackendKind _preferred_kind;
 };
 #define EXECUTOR (Singleton<Executor>::getInstance())
 

@@ -42,6 +42,10 @@ void im2col_nchw(const FLOAT* input,
                  FLOAT* col);
 FLOAT mean_fp32(const FLOAT* data, UINT size);
 FLOAT variance_fp32(const FLOAT* data, UINT size, FLOAT mean);
+void mean_variance_fp32(const FLOAT* data,
+                        UINT size,
+                        FLOAT& mean,
+                        FLOAT& var);
 void normalize_affine_fp32(const FLOAT* input,
                            FLOAT* output,
                            UINT size,
@@ -78,6 +82,10 @@ void concat_axis_fp32(const std::vector<const FLOAT*>& inputs,
                       FLOAT* output,
                       const std::vector<core::DataShape_t>& shapes,
                       UINT axis);
+void build_adaptive_pool_bounds(UINT in_size,
+                                UINT out_size,
+                                UINT* starts,
+                                UINT* ends);
 void adaptive_avgpool2d_nchw(const FLOAT* input,
                              FLOAT* output,
                              UINT batch,
@@ -85,7 +93,11 @@ void adaptive_avgpool2d_nchw(const FLOAT* input,
                              UINT in_h,
                              UINT in_w,
                              UINT out_h,
-                             UINT out_w);
+                             UINT out_w,
+                             const UINT* h_starts,
+                             const UINT* h_ends,
+                             const UINT* w_starts,
+                             const UINT* w_ends);
 void adaptive_maxpool2d_nchw(const FLOAT* input,
                              FLOAT* output,
                              UINT batch,
@@ -93,7 +105,12 @@ void adaptive_maxpool2d_nchw(const FLOAT* input,
                              UINT in_h,
                              UINT in_w,
                              UINT out_h,
-                             UINT out_w);
+                             UINT out_w,
+                             const UINT* h_starts,
+                             const UINT* h_ends,
+                             const UINT* w_starts,
+                             const UINT* w_ends,
+                             int32_t* indices);
 
 } // namespace math
 } // namespace cpu

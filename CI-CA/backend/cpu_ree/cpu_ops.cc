@@ -34,6 +34,14 @@ void* require_workspace(core::LayerSlice *ls, ThreadCtx_t *ctx, UINT bytes) {
     return static_cast<void*>(ws.base);
 }
 
+void prepare_graph_input(core::LayerSlice *ls) {
+    EXIT_ERROR_CHECK_EQ(nullptr, ls, "LayerSlice is nullptr");
+}
+
+void prepare_graph_output(core::LayerSlice *ls) {
+    EXIT_ERROR_CHECK_EQ(nullptr, ls, "LayerSlice is nullptr");
+}
+
 void execute_graph_input(core::LayerSlice *ls, ThreadCtx_t *ctx) {
     (void)ls;
     (void)ctx;

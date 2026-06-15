@@ -6,6 +6,9 @@
 #include <generic/utils.h>
 
 namespace Kernel {
+// 运行时环境的准备 和一些 合法性检查 还是要和 execute 解耦开
+struct ThreadCtx_s;
+typedef struct ThreadCtx_s ThreadCtx_t;
 
 namespace backend { class Backend; } // namespace end of backend
 
@@ -60,6 +63,7 @@ enum class LayerType : UINT {
     RELU,
     SIGMOID,
     DROPOUT,
+    FLATTEN,
     BIASADD,
     MATMUL,
     LINEAR,
@@ -287,7 +291,7 @@ class OpSignature {
 public:
     OpSignature() = delete;
     OpSignature(LayerType type);
-    ~OpSignature();
+    virtual ~OpSignature();
     inline uint32_t flags() { return _lf; }
 protected:
     void dealParams(Layer *l);
@@ -307,16 +311,53 @@ protected:
 
 class LayerSlice {
 public:
+    using ExecFn = void (*)(LayerSlice*, ThreadCtx_t*);
+    using CacheDeleter = void (*)(void*);
+
     LayerSlice(): _layer(nullptr), _desc() {}
     LayerSlice(Layer* layer, SliceDesc_t desc)
-        : _layer(layer), _desc(std::move(desc)) {}
+        : _layer(layer), _desc(std::move(desc)), _backend(nullptr), _exec(nullptr),
+          _impl(nullptr), _cache(nullptr), _cache_deleter(nullptr) {}
+    ~LayerSlice() {
+        if (nullptr != _cache_deleter && nullptr != _cache) {
+            _cache_deleter(_cache);
+        }
+        _cache = nullptr;
+        _cache_deleter = nullptr;
+    }
 
     Layer* layer() const { return _layer; }
     const SliceDesc_t& desc() const { return _desc; }
+    Backend* backend() const { return _backend; }
+    ExecFn exec() const { return _exec; }
+    template <typename T>
+    T* impl() const { return static_cast<T*>(_impl); }
+    template <typename T>
+    T* cache() const { return static_cast<T*>(_cache); }
+    void setBackend(Backend* backend) { _backend = backend; }
+    void setExec(ExecFn exec) { _exec = exec; }
+    void setImpl(void* impl) { _impl = impl; }
+    // prepare 阶段第一次 bind executor 阶段按需调用
+    void setCache(void* cache, CacheDeleter deleter) {
+        if (nullptr != _cache_deleter && nullptr != _cache) {
+            _cache_deleter(_cache);
+        }
+        _cache = cache;
+        _cache_deleter = deleter;
+    }
+    void execute(ThreadCtx_t* ctx) const {
+        EXIT_ERROR_CHECK_EQ(nullptr, _exec, "LayerSlice execute fn is nullptr");
+        _exec(const_cast<LayerSlice*>(this), ctx);
+    }
 
 private:
     Layer*   _layer;   // 原始 Layer
     SliceDesc_t _desc;   // 切片描述
+    Backend* _backend;
+    ExecFn _exec;
+    void* _impl;
+    void* _cache;
+    CacheDeleter _cache_deleter;
 };
 
 
