@@ -36,6 +36,8 @@ Graph::Graph():
 
 Graph::Graph(const GraphSignature& sig):
     Graph() {
+    // 这里的拷贝构造用的是默认的 
+    // Data 数据本质上是 浅拷贝
     _sig = sig;
     build();
 }
@@ -60,14 +62,18 @@ void Graph::addOutput(const std::string& name, Value_t& value) {
     _sig.outputs.emplace_back(name, value);
 }
 
+// 至此之前 Layers 之间的依赖关系已经存在了
 void Graph::build() {
+    // 这里是防止重复构建
     EXIT_ERROR_CHECK_NE(nullptr, _inputBoundary, "Graph has already been built");
     EXIT_ERROR_CHECK_NE(nullptr, _outputBoundary, "Graph has already been built");
 
-    checkSig();
-    collectOuts();
+    // 正式插入 boundary layer 之前 先校验并收集图结构
+    checkSig();     // 检查 GraphSignature 本身是否合法
+    collectOuts();  // 从 graph outputs 反向 DFS 把所有能到达这些 outputs 的 layer 收集进 _layers
     checkInputs();
 
+    // 创建输入输出的边界层
     std::vector<Value_t*> input_vals;
     input_vals.reserve(_sig.inputs.size());
     for (auto it = _sig.inputs.begin(); it != _sig.inputs.end(); ++it) {
@@ -89,6 +95,7 @@ void Graph::build() {
 
     _layersNum = static_cast<UINT>(_layers.size());
 
+    // 从输入边界层开始做拓扑排序 生成 _execOrder
     buildExecutionOrder(_inputBoundary);
 }
 
@@ -260,6 +267,113 @@ void Graph::rebuildLinks() {
 Layer *Graph::operator[](UINT id) {
     if (id >= _execOrder.size()) { return nullptr; }
     return _execOrder[id];
+}
+
+std::vector<Layer *> Graph::prevs(const Layer *layer) const {
+    EXIT_ERROR_CHECK_EQ(nullptr, layer, "Layer is nullptr");
+
+    std::vector<Layer *> result;
+    result.reserve(layer->_inputsLNum);
+    Layer *mutable_layer = const_cast<Layer *>(layer);
+    for (auto it = mutable_layer->_inputsL.begin(); it != mutable_layer->_inputsL.end(); ++it) {
+        result.push_back(*it);
+    }
+    return result;
+}
+
+std::vector<Layer *> Graph::nexts(const Layer *layer) const {
+    EXIT_ERROR_CHECK_EQ(nullptr, layer, "Layer is nullptr");
+
+    std::vector<Layer *> result;
+    result.reserve(layer->_outputsLNum);
+    Layer *mutable_layer = const_cast<Layer *>(layer);
+    for (auto it = mutable_layer->_outputsL.begin(); it != mutable_layer->_outputsL.end(); ++it) {
+        result.push_back(*it);
+    }
+    return result;
+}
+
+std::vector<Value_t *> Graph::ins(const Layer *layer) const {
+    EXIT_ERROR_CHECK_EQ(nullptr, layer, "Layer is nullptr");
+
+    std::vector<Value_t *> result;
+    result.reserve(layer->_inputs.size());
+    for (auto it = layer->_inputs.begin(); it != layer->_inputs.end(); ++it) {
+        result.push_back(*it);
+    }
+    return result;
+}
+
+std::vector<Value_t *> Graph::outs(const Layer *layer) const {
+    EXIT_ERROR_CHECK_EQ(nullptr, layer, "Layer is nullptr");
+
+    std::vector<Value_t *> result;
+    result.reserve(layer->_outputs.size());
+    for (auto it = layer->_outputs.begin(); it != layer->_outputs.end(); ++it) {
+        result.push_back(it->get());
+    }
+    return result;
+}
+
+bool Graph::isGraphInputValue(const Value_t *value) const {
+    if (nullptr == value) {
+        return false;
+    }
+    for (auto it = _sig.inputs.begin(); it != _sig.inputs.end(); ++it) {
+        if (it->value == value) {
+            return true;
+        }
+    }
+    if (_inputBoundary) {
+        for (UINT i = 0; i < _inputBoundary->outputNum(); ++i) {
+            if (&_inputBoundary->output(i) == value) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool Graph::isGraphOutputValue(const Value_t *value) const {
+    if (nullptr == value) {
+        return false;
+    }
+    for (auto it = _sig.outputs.begin(); it != _sig.outputs.end(); ++it) {
+        if (it->value == value) {
+            return true;
+        }
+    }
+    if (_outputBoundary) {
+        for (UINT i = 0; i < _outputBoundary->inputNum(); ++i) {
+            if (&_outputBoundary->input(i) == value) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool Graph::valueCrossesDomain(const Value_t *value) const {
+    if (nullptr == value) {
+        return false;
+    }
+
+    const Layer *producer = value->producer;
+    if (nullptr == producer) {
+        return false;
+    }
+
+    const ExecutionDomain prod_domain = producer->execDomain();
+    for (auto it = value->consumers.begin(); it != value->consumers.end(); ++it) {
+        const Layer *consumer = *it;
+        if (nullptr == consumer) {
+            continue;
+        }
+        if (consumer->execDomain() != prod_domain) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void Graph::buildExecutionOrder(Layer *inputL) {

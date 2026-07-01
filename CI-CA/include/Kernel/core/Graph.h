@@ -31,6 +31,18 @@ public:
     const GraphSignature& signature() const { return _sig; }
     Layer* inputBoundary() const { return _inputBoundary; }
     Layer* outputBoundary() const { return _outputBoundary; }
+    const std::vector<Layer *>& execOrder() const { return _execOrder; }
+
+    // 用于支持 有向无环图相关的查询
+    // 查询前驱后驱 输入输出等
+    std::vector<Layer *> prevs(const Layer *layer) const;
+    std::vector<Layer *> nexts(const Layer *layer) const;
+    std::vector<Value_t *> ins(const Layer *layer) const;
+    std::vector<Value_t *> outs(const Layer *layer) const;
+    bool isGraphInputValue(const Value_t *value) const;
+    bool isGraphOutputValue(const Value_t *value) const;
+    // 判断一个 Value 的 producer 和所有的 consumer 是否在一个 domain 内
+    bool valueCrossesDomain(const Value_t *value) const;
 
     // 拓扑构建
     // void add_layer(Layer* layer);
@@ -69,6 +81,7 @@ public:
     std::unordered_set<Layer *> _confLayers;
 
     // Graph 视角需要记录下执行顺序
+    // 主要意义还是 有向无环图 需要一个稳定的 拓扑排序
     std::vector<Layer *> _execOrder;
 
 };

@@ -10,11 +10,11 @@ namespace Kernel {
 namespace backend {
 
 enum class BackendKind : uint8_t {
-    CPU_REE,        // 当前默认 CPU backend
-    CPU_REE_REF,    // 参考实现 / 基准实现
-    CPU_REE_ALT0,   // 预留给其他 CPU 实现
-    CPU_REE_ALT1,   // 预留给其他 CPU 实现
-    CPU_TEE,
+    BK_CPU_REE,        // 当前默认 CPU backend
+    BK_CPU_REE_REF,    // 参考实现 / 基准实现
+    BK_CPU_REE_ALT0,   // 预留给其他 CPU 实现
+    BK_CPU_REE_ALT1,   // 预留给其他 CPU 实现
+    BK_CPU_TEE,
     // GPU,
     // NPU,
 };
@@ -35,7 +35,7 @@ public:
     Backend_CPU_REE() = default;
     ~Backend_CPU_REE() override = default;
 
-    BackendKind kind() const override { return BackendKind::CPU_REE; }
+    BackendKind kind() const override { return BackendKind::BK_CPU_REE; }
     void prepare(LayerSlice* ls) override;
     void execute(LayerSlice* ls, ThreadCtx_t* ctx) override;
 };
@@ -45,7 +45,7 @@ public:
     Backend_CPU_REE_REF() = default;
     ~Backend_CPU_REE_REF() override = default;
 
-    BackendKind kind() const override { return BackendKind::CPU_REE_REF; }
+    BackendKind kind() const override { return BackendKind::BK_CPU_REE_REF; }
     void prepare(LayerSlice* ls) override;
     void execute(LayerSlice* ls, ThreadCtx_t* ctx) override;
 };
@@ -55,7 +55,7 @@ public:
     Backend_CPU_TEE() = default;
     ~Backend_CPU_TEE() override = default;
 
-    BackendKind kind() const override { return BackendKind::CPU_TEE; }
+    BackendKind kind() const override { return BackendKind::BK_CPU_TEE; }
     void prepare(LayerSlice* ls) override;
     void execute(LayerSlice* ls, ThreadCtx_t* ctx) override;
 };

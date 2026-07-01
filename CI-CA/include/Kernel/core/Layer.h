@@ -24,6 +24,7 @@ class LayerSlice;
 enum LayerFlags : uint32_t {
     LF_NONE             = 0,
     LF_PREFER_CPU       = 1 << 1,
+    // 用不用的上这里都先保留了
     LF_PREFER_GPU       = 1 << 2,
     LF_PREFER_NPU       = 1 << 3,
     
@@ -33,6 +34,14 @@ enum LayerFlags : uint32_t {
     // ......
 };
 #define LF_DEFAULT (LF_NONE | LF_PREFER_CPU)
+
+enum class ExecutionDomain : uint8_t {
+    ED_DEFAULT = 0,
+    ED_CPU_REE,
+    ED_CPU_TEE,
+};
+
+bool is_exec_domain_registered(ExecutionDomain domain);
 
 enum class ParamRole : uint8_t {
     WEIGHT,
@@ -81,7 +90,7 @@ class Params {
 friend class OpSignature;
 friend class Layer;
 private:
-    Params(): refcnt(1), params(), order() {}
+    Params(): id(detail::next_params_id()), refcnt(1), params(), param_ids(), order() {}
     ~Params() {
         for (auto it = params.begin(); it != params.end(); ++it) {
             delete it->second;
@@ -91,6 +100,10 @@ private:
     Data_t* get(ParamRole role) const {
         auto it = params.find(role);
         return it == params.end() ? nullptr : it->second;
+    }
+    UINT paramId(ParamRole role) const {
+        auto it = param_ids.find(role);
+        return it == param_ids.end() ? INVALID_VALUE_U : it->second;
     }
     bool has(ParamRole role) const {
         return params.find(role) != params.end();
@@ -116,19 +129,23 @@ public:
         if (it != params.end()) {
             delete it->second;
             it->second = data;
-            // 注意: order 不需要重复插入 因为 role 已经存在
+            // 同一个参数槽位替换底层 Data_t 时 保留原有 param_id
         } else {
             // 新插入
             params[role] = data;
+            param_ids[role] = detail::next_param_id();
             order.push_back(role);
         }
     }
 
 private:
+    UINT id;
     std::atomic<uint32_t> refcnt;
 
     // 这里的 *Data_t 为实际拥有 负责释放
     std::unordered_map<ParamRole, Data_t *> params;
+    // param_id 属于“参数槽位”本身 不绑定到底层 Data_t
+    std::unordered_map<ParamRole, UINT> param_ids;
     // 参数顺序 (执行 / 序列化用) 保留字段作用
     std::vector<ParamRole> order;
 };
@@ -193,9 +210,13 @@ private:
 public:
     inline LayerType type() const { return _type; }
     inline UINT id() const { return _id; }
+    inline uint32_t lf() const { return _lf; }
     inline const Params *params() const { return _params; }
     inline const Data_t *param(ParamRole role) const {
         return _params ? _params->get(role) : nullptr;
+    }
+    inline UINT paramId(ParamRole role) const {
+        return _params ? _params->paramId(role) : INVALID_VALUE_U;
     }
     inline const OpSignature *opSignature() const { return _opSignature; }
     // 这里需要取消拷贝构造带来的问题 
@@ -239,7 +260,11 @@ public:
     Value_t &output();
 
     std::vector<Value_t *> outputs(OutputKind kind);
-    inline BOOL isInTEE() { return _inTEE; }
+    ExecutionDomain execDomain() const;
+    Layer &setExecDomain(ExecutionDomain domain);
+    Layer &requireTEE(bool enable = true);
+    Layer &useLocal(bool enable = true);
+    inline BOOL isInTEE() const { return static_cast<BOOL>(_lf & LF_REQUIRE_TEE); }
 
 protected:
     // 从设计原则上 Layer ID 应该是 Graph 内唯一
@@ -247,9 +272,7 @@ protected:
     // 我们的最终目标至少需要确保 CA TA 之间的 Layer 有明确的一一对应关系
     // 这里 ID 的分配必须全局唯一
     UINT _id;
-
     LayerType _type;
-    BOOL _inTEE;
     // 其他运行时属性 LayerFlags 
     // 逻辑上应该和 OpSignature 完全对应
     uint32_t _lf;
@@ -293,11 +316,20 @@ public:
     OpSignature(LayerType type);
     virtual ~OpSignature();
     inline uint32_t flags() { return _lf; }
+    ExecutionDomain execDomain() const;
+    // 这里的 setBackend 仅仅是设置 OpSignature 
+    // 在图构建阶段 由该 OpSignature 创建出来的节点默认都是 对应的配置
+    // 或者说 OpSignature 只负责“新节点默认后端 + 参数共享策略”
+    // 区别于 Layer::setExecDomain 直接设置计算图上具体节点的执行域
+    // 一旦该 OpSignature 已经创建出任何 Layer，就禁止再修改默认后端，
+    // 避免模板默认值与图上已有节点的后端语义分裂。
+    OpSignature &setExecDomain(ExecutionDomain domain);
+    OpSignature &requireTEE(bool enable = true);
+    OpSignature &useLocal(bool enable = true);
 protected:
     void dealParams(Layer *l);
 protected:
     LayerType _type;
-    BOOL _inTEE;
     // 其他运行时属性 LayerFlags
     uint32_t _lf;
 

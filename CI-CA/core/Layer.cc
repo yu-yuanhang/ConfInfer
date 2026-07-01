@@ -5,8 +5,40 @@ namespace core {
 
 static Value_t dummyValue;
 
+namespace {
+
+ExecutionDomain domain_from_flags(uint32_t flags) {
+    if (flags & LF_REQUIRE_TEE) {
+        return ExecutionDomain::ED_CPU_TEE;
+    }
+    // 以下是 非 TEE 的情况
+    if (flags & LF_PREFER_CPU) {
+        return ExecutionDomain::ED_CPU_REE;
+    }
+    return ExecutionDomain::ED_DEFAULT;
+}
+
+void apply_domain_flags(uint32_t &flags, ExecutionDomain domain) {
+    flags &= ~(LF_REQUIRE_TEE | LF_PREFER_CPU);
+
+    switch (domain) {
+    case ExecutionDomain::ED_CPU_TEE:
+        flags |= LF_REQUIRE_TEE;
+        break;
+    case ExecutionDomain::ED_CPU_REE:
+        flags |= LF_PREFER_CPU;
+        break;
+    case ExecutionDomain::ED_DEFAULT:
+    default:
+        flags |= LF_DEFAULT;
+        break;
+    }
+}
+
+} // namespace
+
 Layer::Layer(LayerType type, OpSignature *opSignature):
-    _id(_counter++), _type(type), _inTEE(false), _lf(opSignature->flags()),
+    _id(_counter++), _type(type), _lf(opSignature->flags()),
     _inputsLNum(0), _outputsLNum(0),
     _inputsL(), _outputsL(),
     _inputs(), _outputs(),
@@ -139,10 +171,29 @@ std::vector<Value_t*> Layer::outputs(OutputKind kind) {
     return result;
 }
 
+ExecutionDomain Layer::execDomain() const {
+    return domain_from_flags(_lf);
+}
+
+Layer &Layer::setExecDomain(ExecutionDomain domain) {
+    EXIT_ERROR_CHECK_EQ(false, is_exec_domain_registered(domain),
+        "Layer execution domain is not registered in EXECUTOR");
+    apply_domain_flags(_lf, domain);
+    return *this;
+}
+
+Layer &Layer::requireTEE(bool enable) {
+    return setExecDomain(enable ? ExecutionDomain::ED_CPU_TEE : ExecutionDomain::ED_CPU_REE);
+}
+
+Layer &Layer::useLocal(bool enable) {
+    return setExecDomain(enable ? ExecutionDomain::ED_CPU_REE : ExecutionDomain::ED_DEFAULT);
+}
+
 std::atomic<UINT> Layer::_counter{0};
 
 OpSignature::OpSignature(LayerType type):
-    _type(type), _inTEE(false), _lf(LF_DEFAULT),
+    _type(type), _lf(LF_DEFAULT),
     _layers(),
     _ownParams(true), _params(nullptr) {}
 
@@ -157,6 +208,28 @@ OpSignature::~OpSignature() {
         _params->release();
         _params = nullptr;
     }
+}
+
+ExecutionDomain OpSignature::execDomain() const {
+    return domain_from_flags(_lf);
+}
+
+OpSignature &OpSignature::setExecDomain(ExecutionDomain domain) {
+    EXIT_ERROR_CHECK_EQ(false, _layers.empty(),
+        "OpSignature execution domain cannot be changed after Layer instances have been created; "
+        "set the execution domain before materializing the graph, or use Layer::setExecDomain() on concrete nodes");
+    EXIT_ERROR_CHECK_EQ(false, is_exec_domain_registered(domain),
+        "OpSignature execution domain is not registered in EXECUTOR");
+    apply_domain_flags(_lf, domain);
+    return *this;
+}
+
+OpSignature &OpSignature::requireTEE(bool enable) {
+    return setExecDomain(enable ? ExecutionDomain::ED_CPU_TEE : ExecutionDomain::ED_CPU_REE);
+}
+
+OpSignature &OpSignature::useLocal(bool enable) {
+    return setExecDomain(enable ? ExecutionDomain::ED_CPU_REE : ExecutionDomain::ED_DEFAULT);
 }
 
 void OpSignature::dealParams(Layer *l) {

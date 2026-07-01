@@ -16,6 +16,7 @@ file(GLOB MAIN_SOURCES_C
 add_executable(${PROJECT_NAME} ${MAIN_SOURCES_CPP} ${MAIN_SOURCES_C})
 
 set(KERNEL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../CI-CA")
+set(CONFINFER_LIB_DIR "${KERNEL_DIR}/build" CACHE PATH "Directory containing libConfInfer")
 
 target_include_directories(${PROJECT_NAME}
     PUBLIC ${KERNEL_DIR}/include
@@ -32,7 +33,7 @@ find_library(LOG4CPP_LIB log4cpp PATHS
     REQUIRED)
 
 find_library(CONFINFER_LIB ConfInfer PATHS
-    ${KERNEL_DIR}/build
+    ${CONFINFER_LIB_DIR}
     REQUIRED)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE ${LOG4CPP_LIB} ${CONFINFER_LIB})

@@ -9,6 +9,30 @@ namespace core {
 
 #define PARAM_MAX_DIMS  6
 
+namespace detail {
+
+inline UINT next_data_id() {
+    static std::atomic<UINT> counter{1};
+    return counter.fetch_add(1, std::memory_order_relaxed);
+}
+
+inline UINT next_value_id() {
+    static std::atomic<UINT> counter{1};
+    return counter.fetch_add(1, std::memory_order_relaxed);
+}
+
+inline UINT next_params_id() {
+    static std::atomic<UINT> counter{1};
+    return counter.fetch_add(1, std::memory_order_relaxed);
+}
+
+inline UINT next_param_id() {
+    static std::atomic<UINT> counter{1};
+    return counter.fetch_add(1, std::memory_order_relaxed);
+}
+
+} // namespace detail
+
 // 强类型枚举 (enum class)
 // 枚举值会直接暴露到外层作用域 必须通过枚举类型名访问
 enum class DataType : int8_t {
@@ -61,6 +85,7 @@ enum ParamFlags : uint32_t {
 // 用于表示模型参数 或是 输入输出数据 
 // (最底层表示 在计算图上的不具有任何语义)
 typedef struct Data_s {
+    UINT            id;
     DataShape_t     shape;    // c_out | c_in/g | h | w
     DataType        dtype;        
     DataLocation    location; // 所对应执行域
@@ -70,6 +95,7 @@ typedef struct Data_s {
     // 默认构造函数 : 一般在 Layer 初始化列表中被调用
     // 被作用为 算子参数 (权重信息)
     Data_s(uint32_t flags):
+        id(detail::next_data_id()),
         shape(), 
         dtype(DataType::FP32), 
         location(DataLocation::CPU), 
@@ -78,6 +104,7 @@ typedef struct Data_s {
     Data_s(uint32_t flags, std::initializer_list<uint32_t> shape_dims,
            DataType dtype = DataType::FP32,
            DataLocation location = DataLocation::CPU):
+        id(detail::next_data_id()),
         shape(shape_dims),
         dtype(dtype),
         location(location),
@@ -86,7 +113,7 @@ typedef struct Data_s {
     ~Data_s() { release(); }
     Data_s(const Data_s &rhs) = delete;
     Data_s &operator=(const Data_s &rhs) = delete;
-    uint32_t getTypeSize() {
+    uint32_t getTypeSize() const {
         switch (dtype) {
             case DataType::INT8:
                 return sizeof(int8_t);
@@ -182,7 +209,7 @@ typedef struct Value_s {
     // 默认构造为占位 / 外部托管语义，不自动拥有数据
     Value_s(uint32_t flag = PARAM_NONE):
         data(flag),
-        id(INVALID_VALUE_U),
+        id(detail::next_value_id()),
         producer(nullptr),
         output_index(INVALID_VALUE_U),
         kind(OutputKind::Default) {}
@@ -191,7 +218,7 @@ typedef struct Value_s {
             DataLocation location = DataLocation::CPU,
             uint32_t flag = PARAM_NONE):
         data(flag, shape_dims, dtype, location),
-        id(INVALID_VALUE_U),
+        id(detail::next_value_id()),
         producer(nullptr),
         output_index(INVALID_VALUE_U),
         kind(OutputKind::Default) {}

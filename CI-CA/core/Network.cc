@@ -1,17 +1,412 @@
 #include <core/Network.h>
 #include <core/BoundaryLayer.h>
+#include <core/ProtoExecBridge.h>
+#if ENABLE_TEE_BRIDGE
+#include <bridges/TeeExecBridge.h>
+#endif
 
 namespace Kernel {
 namespace core {
 
-Executor::Executor(): _by_kind(), _preferred_kind(BackendKind::CPU_REE) {
+namespace {
+
+BackendKind backend_kind_from_execution_domain(ExecutionDomain domain, BackendKind preferred_kind) {
+    switch (domain) {
+    // 这里目前的设计就是 一个执行区域 对应一种 BackendKind
+    case ExecutionDomain::ED_CPU_REE:
+        return BackendKind::BK_CPU_REE;
+    case ExecutionDomain::ED_CPU_TEE:
+        return BackendKind::BK_CPU_TEE;
+    case ExecutionDomain::ED_DEFAULT:
+    default:
+        return preferred_kind;
+    }
+}
+
+BackendKind fallback_backend_kind_for_domain(ExecutionDomain domain, BackendKind preferred_kind) {
+    switch (domain) {
+    case ExecutionDomain::ED_CPU_TEE:
+        // 当 TEE bridge 还没挂上时，先回退到本地参考实现，保证 CI-CA 可独立运行。
+        // return BackendKind::BK_CPU_REE_REF;
+        return BackendKind::BK_CPU_TEE;
+    case ExecutionDomain::ED_CPU_REE:
+    case ExecutionDomain::ED_DEFAULT:
+    default:
+        return preferred_kind;
+    }
+}
+
+// unordered_map 哈希表型键值对容器 
+// key-value 存储 无序
+using SliceMap = std::unordered_map<const Layer *, LayerSlice *>;
+
+SliceMap make_slice_map(const std::vector<LayerSlice *>& slices) {
+    SliceMap smap;
+    smap.reserve(slices.size());
+    for (auto it = slices.begin(); it != slices.end(); ++it) {
+        LayerSlice *slice = *it;
+        EXIT_ERROR_CHECK_EQ(nullptr, slice, "LayerSlice is nullptr");
+        smap[slice->layer()] = slice;
+    }
+    return smap;
+}
+
+void fill_unit_io_from_part(ExecUnit& unit, const ExecutionPartition& part) {
+    for (auto it = part.inputs().begin(); it != part.inputs().end(); ++it) {
+        unit.addInput(*it);
+    }
+    for (auto it = part.outputs().begin(); it != part.outputs().end(); ++it) {
+        unit.addOutput(*it);
+    }
+}
+
+void append_partition_unit(ExecutionPlan& plan,
+                           const ExecutionPartition& part,
+                           const SliceMap& slices) {
+    ExecUnit unit;
+    unit.setType(ExecUnitType::EU_PARTITION);
+    unit.setDomain(part.domain());
+    unit.setPart(&part);
+    fill_unit_io_from_part(unit, part);
+
+    for (auto it = part.topo().begin(); it != part.topo().end(); ++it) {
+        auto smap_it = slices.find(*it);
+        EXIT_ERROR_CHECK_EQ(smap_it, slices.end(), "Partition layer slice not found");
+        unit.addSlice(smap_it->second);
+    }
+    plan.addUnit(unit);
+}
+
+void append_layer_units(ExecutionPlan& plan,
+                        const ExecutionPartition& part,
+                        const SliceMap& slices) {
+    for (auto it = part.topo().begin(); it != part.topo().end(); ++it) {
+        auto smap_it = slices.find(*it);
+        EXIT_ERROR_CHECK_EQ(smap_it, slices.end(), "Layer slice not found");
+
+        ExecUnit unit;
+        unit.setType(ExecUnitType::EU_LAYER);
+        unit.setDomain(part.domain());
+        unit.setPart(&part);
+        unit.addSlice(smap_it->second);
+        fill_unit_io_from_part(unit, part);
+        plan.addUnit(unit);
+    }
+}
+
+void execute_unit_local(const ExecUnit& unit, Executor *exec, ThreadCtx_t *ctx) {
+    for (auto it = unit.slices().begin(); it != unit.slices().end(); ++it) {
+        exec->execute_layer(*it, ctx);
+    }
+}
+
+bool execute_unit_bridge(const ExecUnit& unit, Executor *exec, ThreadCtx_t *ctx) {
+    // ExecutionPlan 里拿到一个 ExecUnit
+    // 看它的 domain
+    // 去 Executor 里找这个域对应的 bridge
+    // 找到就交给它执行
+    // 找不到就本地执行
+    EXIT_ERROR_CHECK_EQ(nullptr, exec, "Executor is nullptr");
+    ExecDomainBridge *bridge = exec->execBridge(unit.domain());
+    if (nullptr == bridge) {
+        return false;
+    }
+    if (bridge->domain() != unit.domain()) {
+        return false;
+    }
+    return bridge->execute(unit, exec, ctx);
+}
+
+void execute_unit(const ExecUnit& unit, Executor *exec, ThreadCtx_t *ctx) {
+    if (execute_unit_bridge(unit, exec, ctx)) {
+        return;
+    }
+    execute_unit_local(unit, exec, ctx);
+}
+
+uint32_t data_type_to_proto(DataType dtype) {
+    switch (dtype) {
+    case DataType::FP16:
+        return CONFINFER_DTYPE_FP16;
+    case DataType::INT8:
+        return CONFINFER_DTYPE_INT8;
+    case DataType::INT32:
+        return CONFINFER_DTYPE_INT32;
+    case DataType::FP32:
+    default:
+        return CONFINFER_DTYPE_FP32;
+    }
+}
+
+uint32_t data_location_to_proto(DataLocation location) {
+    switch (location) {
+    case DataLocation::TEE:
+        return CONFINFER_DATA_TEE;
+    case DataLocation::CPU:
+    default:
+        return CONFINFER_DATA_CPU;
+    }
+}
+
+uint32_t param_role_to_proto(ParamRole role) {
+    switch (role) {
+    case ParamRole::WEIGHT:
+        return CONFINFER_PARAM_ROLE_WEIGHT;
+    case ParamRole::BIAS:
+        return CONFINFER_PARAM_ROLE_BIAS;
+    case ParamRole::RUNNING_MEAN:
+        return CONFINFER_PARAM_ROLE_RUNNING_MEAN;
+    case ParamRole::RUNNING_VAR:
+        return CONFINFER_PARAM_ROLE_RUNNING_VAR;
+    case ParamRole::UNKNOWN:
+    default:
+        return CONFINFER_PARAM_ROLE_UNKNOWN;
+    }
+}
+
+bool is_tee_partition_unit(const ExecUnit& unit) {
+    return unit.domain() == ExecutionDomain::ED_CPU_TEE &&
+           unit.type() == ExecUnitType::EU_PARTITION;
+}
+
+ProtoExecBridge *tee_proto_bridge(Executor *exec) {
+    ExecDomainBridge *bridge = exec->execBridge(ExecutionDomain::ED_CPU_TEE);
+    if (nullptr == bridge) {
+        return nullptr;
+    }
+    return dynamic_cast<ProtoExecBridge *>(bridge);
+}
+
+UINT count_tee_partition_units(const ExecutionPlan& plan) {
+    UINT count = 0;
+    for (auto it = plan.units().begin(); it != plan.units().end(); ++it) {
+        if (is_tee_partition_unit(*it)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+// 某一个 layer 的某一个参数槽位转成协议里的 confinfer_param_desc_t
+// 并把它的原始字节追加到 blob 里
+void append_param_desc(std::vector<confinfer_param_desc_t>& descs,
+                       std::vector<uint8_t>& blob,
+                       std::unordered_set<confinfer_param_id_t>& seen,
+                       confinfer_partition_id_t partition_id,
+                       const Layer *layer,
+                       ParamRole role,
+                       const Data_t *param) {
+    confinfer_param_desc_t desc{};
+    const uint32_t role_id = param_role_to_proto(role);
+    const UINT param_id = layer ? layer->paramId(role) : INVALID_VALUE_U;
+    const uint32_t byte_size = param->shape.size * param->getTypeSize();
+
+    EXIT_ERROR_CHECK_EQ(nullptr, layer, "Layer is nullptr");
+    EXIT_ERROR_CHECK_EQ(nullptr, param, "Param is nullptr");
+    EXIT_ERROR_CHECK_EQ(nullptr, param->ptr, "Param data.ptr is nullptr");
+    EXIT_ERROR_CHECK_EQ(INVALID_VALUE_U, param_id, "Layer param_id is invalid");
+
+    // 同一个共享参数 可能被多个 layer 或多个 slice 间接访问到
+    // 但 TA 里只应该加载一份常驻参数
+    desc.param_id = static_cast<confinfer_param_id_t>(param_id);
+    if (seen.find(desc.param_id) != seen.end()) {
+        return;
+    }
+
+    desc.owner_layer_id = layer->id();
+    // 参数槽位所属的分区身份也直接沿用 REE 侧 ExecutionPartition.id。
+    desc.owner_partition_id = partition_id;
+    desc.role = role_id;
+    desc.dtype = data_type_to_proto(param->dtype);
+    desc.location = data_location_to_proto(param->location);
+    desc.flags = param->flags;
+    desc.elem_count = param->shape.size;
+    desc.byte_size = byte_size;
+    desc.data_offset = static_cast<uint32_t>(blob.size());
+    desc.ndim = param->shape.ndim;
+    EXIT_ERROR_CHECK_EQ(true, desc.ndim > CONFINFER_VALUE_MAX_DIMS,
+                        "Param ndim exceeds protocol max dims");
+    for (uint32_t i = 0; i < desc.ndim; ++i) {
+        desc.dims[i] = param->shape.dims[i];
+    }
+
+    const uint8_t *src = static_cast<const uint8_t *>(param->ptr);
+    blob.insert(blob.end(), src, src + byte_size);
+    descs.push_back(desc);
+    seen.insert(desc.param_id);
+}
+
+// 把所有 TEE 分区会用到的常驻参数抽取出来 整理成：
+// 参数描述表 param_descs
+// 参数字节流 param_blob
+void collect_tee_params(const ExecutionPlan& plan,
+                        std::vector<confinfer_param_desc_t>& descs,
+                        std::vector<uint8_t>& blob) {
+    std::unordered_set<confinfer_param_id_t> seen;
+    const ParamRole roles[] = {
+        ParamRole::WEIGHT,
+        ParamRole::BIAS,
+        ParamRole::RUNNING_MEAN,
+        ParamRole::RUNNING_VAR,
+    };
+
+    // 先遍历 exec_unit 中的 TEE 分区
+    for (auto it = plan.units().begin(); it != plan.units().end(); ++it) {
+        if (!is_tee_partition_unit(*it)) {
+            continue;
+        }
+        const ExecutionPartition *part = it->part();
+        EXIT_ERROR_CHECK_EQ(nullptr, part, "TEE ExecUnit partition is nullptr");
+        // 遍历这个分区单元里的每个 LayerSlice 取出 slice->layer()
+        for (auto sit = it->slices().begin(); sit != it->slices().end(); ++sit) {
+            LayerSlice *slice = *sit;
+            Layer *layer = slice ? slice->layer() : nullptr;
+            EXIT_ERROR_CHECK_EQ(nullptr, layer, "TEE ExecUnit layer is nullptr");
+            for (ParamRole role : roles) {
+                // 对固定的参数角色集合逐个检查
+                const Data_t *param = layer->param(role);
+                if (nullptr == param) {
+                    continue;
+                }
+                append_param_desc(descs, blob, seen,
+                                  static_cast<confinfer_partition_id_t>(part->id()),
+                                  layer, role, param);
+            }
+        }
+    }
+}
+
+// prepare 需要做的事
+// 1. 找出当前执行计划里哪些执行单元属于 TEE
+// 2. 收集这些 TEE 单元涉及到的常驻参数
+// 3. 在 TA 里注册一个模型上下文
+// 4. 把参数加载到这个模型上下文里
+// 5. 把每个 TEE 分区注册到这个模型上下文里
+void prepare_tee_runtime(const Network *network, Executor *exec) {
+    ProtoExecBridge *bridge = nullptr;
+    const ExecutionPlan& plan = network->execPlan();
+    // 统计当前执行计划中有多少个 TEE 分区执行单元
+    const UINT tee_part_count = count_tee_partition_units(plan);
+    // param 描述信息 和 buffer
+    std::vector<confinfer_param_desc_t> param_descs;
+    std::vector<uint8_t> param_blob;
+    // 协议头
+    confinfer_model_desc_t model_desc{};
+    confinfer_load_params_req_t params_req{};
+
+    EXIT_ERROR_CHECK_EQ(nullptr, network, "Network is nullptr");
+    EXIT_ERROR_CHECK_EQ(nullptr, exec, "Executor is nullptr");
+    if (0 == tee_part_count) {
+        return;
+    }
+
+    bridge = tee_proto_bridge(exec);
+    EXIT_ERROR_CHECK_EQ(nullptr, bridge, "TEE ProtoExecBridge is not installed");
+    EXIT_ERROR_CHECK_EQ(false, bridge->lifecycleReady(),
+                        "TEE ProtoExecBridge lifecycle callbacks are not ready");
+
+    // 当前的设计还是 为了最简化的考量 绑定 TEE 的使用场景
+    collect_tee_params(plan, param_descs, param_blob);
+
+    // 先构造 model_desc 再调用 registerModel
+    // 后面 分别回调 bridge 中的 
+    // _register_model 
+    // _load_params 
+    // _register_partition
+    model_desc.version = CONFINFER_PROTOCOL_VERSION;
+    model_desc.model_id = network->modelId();
+    model_desc.flags = 0;
+    model_desc.expected_partition_count = tee_part_count;
+    model_desc.expected_param_count = static_cast<uint32_t>(param_descs.size());
+    model_desc.reserved0 = 0;
+    model_desc.reserved1 = 0;
+    EXIT_ERROR_CHECK_EQ(false, bridge->registerModel(model_desc),
+                        "TEE registerModel failed");
+
+    params_req.version = CONFINFER_PROTOCOL_VERSION;
+    params_req.model_id = network->modelId();
+    params_req.param_count = static_cast<uint32_t>(param_descs.size());
+    params_req.total_param_bytes = static_cast<uint32_t>(param_blob.size());
+    params_req.flags = 0;
+    params_req.reserved0 = 0;
+    params_req.reserved1 = 0;
+    EXIT_ERROR_CHECK_EQ(false,
+                        bridge->loadParams(params_req,
+                                           param_descs.empty() ? nullptr : param_descs.data(),
+                                           static_cast<UINT>(param_descs.size()),
+                                           param_blob.empty() ? nullptr : param_blob.data(),
+                                           static_cast<UINT>(param_blob.size())),
+                        "TEE loadParams failed");
+
+    for (auto it = plan.units().begin(); it != plan.units().end(); ++it) {
+        if (!is_tee_partition_unit(*it)) {
+            continue;
+        }
+        EXIT_ERROR_CHECK_EQ(false,
+                            bridge->registerPartition(*it, network->modelId()),
+                            "TEE registerPartition failed");
+    }
+}
+
+void teardown_tee_runtime(Network *network, Executor *exec, bool strict) {
+    ProtoExecBridge *bridge = nullptr;
+    confinfer_unload_model_req_t req{};
+    confinfer_unload_model_rsp_t rsp{};
+    bool ok = false;
+
+    if (nullptr == network || nullptr == exec || !network->teeRuntimeRegistered()) {
+        return;
+    }
+
+    bridge = tee_proto_bridge(exec);
+    if (nullptr == bridge || !bridge->lifecycleReady()) {
+        if (strict) {
+            EXIT_ERROR("TEE ProtoExecBridge is not ready for unload");
+        }
+        return;
+    }
+
+    req.version = CONFINFER_PROTOCOL_VERSION;
+    req.model_id = network->modelId();
+    req.flags = 0;
+    req.reserved0 = 0;
+    req.reserved1 = 0;
+
+    ok = bridge->unloadModel(req, &rsp);
+    if (strict) {
+        EXIT_ERROR_CHECK_EQ(false, ok, "TEE unloadModel invoke failed");
+        EXIT_ERROR_CHECK_NE(CONFINFER_PROTOCOL_VERSION, rsp.version,
+                            "TEE unloadModel response version mismatch");
+        EXIT_ERROR_CHECK_NE(network->modelId(), rsp.model_id,
+                            "TEE unloadModel response model_id mismatch");
+        EXIT_ERROR_CHECK_NE(CONFINFER_UNLOAD_MODEL_OK, rsp.status,
+                            "TEE unloadModel remote failed");
+    }
+}
+
+} // namespace
+
+std::atomic<confinfer_model_id_t> Network::_modelCounter{1};
+
+Executor::Executor(): _by_kind(), _preferred_kind(BackendKind::BK_CPU_REE), _exec_bridges() {
     static Backend_CPU_REE cpu_backend;
     static Backend_CPU_REE_REF cpu_ref_backend;
-    setBackends({&cpu_backend, &cpu_ref_backend});
+    static Backend_CPU_TEE cpu_tee_backend;
+    setBackends({&cpu_backend, &cpu_ref_backend, &cpu_tee_backend});
+#if ENABLE_TEE_BRIDGE
+    {
+        static Kernel::bridges::TeeExecBridge tee_exec_bridge;
+        uint32_t err_origin = 0;
+        EXIT_ERROR_CHECK_NE(true,
+                            tee_exec_bridge.install(this, &err_origin),
+                            "Failed to install default TEE execution bridge");
+    }
+#endif
 }
 
 Executor::~Executor() {
     _by_kind.clear();
+    _exec_bridges.clear();
 }
 
 void Executor::setBackends(std::vector<Backend *> backends) {
@@ -23,6 +418,44 @@ void Executor::setBackends(std::vector<Backend *> backends) {
 
 void Executor::setBackendKind(BackendKind kind) {
     _preferred_kind = kind;
+}
+
+// 注册执行区域
+void Executor::setExecBridge(ExecutionDomain domain, ExecDomainBridge *bridge) {
+    EXIT_ERROR_CHECK_EQ(nullptr, bridge, "ExecDomainBridge is nullptr");
+    EXIT_ERROR_CHECK_NE(domain, bridge->domain(), "ExecDomainBridge domain mismatch");
+    _exec_bridges[static_cast<uint32_t>(domain)] = bridge;
+}
+
+void Executor::clearExecBridge(ExecutionDomain domain) {
+    _exec_bridges.erase(static_cast<uint32_t>(domain));
+}
+
+ExecDomainBridge *Executor::execBridge(ExecutionDomain domain) const {
+    auto it = _exec_bridges.find(static_cast<uint32_t>(domain));
+    if (it == _exec_bridges.end()) {
+        return nullptr;
+    }
+    return it->second;
+}
+
+bool Executor::supports(BackendKind kind) const {
+    auto it = _by_kind.find(kind);
+    return it != _by_kind.end() && !it->second.empty();
+}
+
+bool Executor::supports(ExecutionDomain domain) const {
+    if (nullptr != execBridge(domain)) {
+        return true;
+    }
+    const BackendKind kind = backend_kind_from_execution_domain(domain, _preferred_kind);
+    if (supports(kind)) {
+        return true;
+    }
+    if (domain == ExecutionDomain::ED_DEFAULT) {
+        return supports(BackendKind::BK_CPU_REE);
+    }
+    return false;
 }
 
 void Executor::prepare_layer(LayerSlice* ls)
@@ -47,14 +480,23 @@ void Executor::execute_layer(LayerSlice* ls, ThreadCtx_t* ctx)
 Backend *Executor::route(uint32_t lf) {
     BackendKind kind = _preferred_kind;
 
-    if (lf & LF_REQUIRE_TEE) { kind = BackendKind::CPU_TEE; }
+    if (lf & LF_REQUIRE_TEE) {
+        if (nullptr != execBridge(ExecutionDomain::ED_CPU_TEE)) {
+            kind = BackendKind::BK_CPU_TEE;
+        } else {
+            kind = fallback_backend_kind_for_domain(ExecutionDomain::ED_CPU_TEE, _preferred_kind);
+        }
+    }
     auto it = _by_kind.find(kind);
     if (it != _by_kind.end() && !it->second.empty()) {
         // 简单策略: 取第一个后端
         return it->second.front();
     }
+    if (kind == BackendKind::BK_CPU_TEE) {
+        return nullptr;
+    }
     // 如果没有找到首选后端，回退到默认 CPU
-    auto cpu_it = _by_kind.find(BackendKind::CPU_REE);
+    auto cpu_it = _by_kind.find(BackendKind::BK_CPU_REE);
     if (cpu_it != _by_kind.end() && !cpu_it->second.empty()) {
         return cpu_it->second.front();
     }
@@ -62,35 +504,42 @@ Backend *Executor::route(uint32_t lf) {
     return nullptr;
 }
 
+bool is_exec_domain_registered(ExecutionDomain domain) {
+    Executor *exec = EXECUTOR;
+    EXIT_ERROR_CHECK_EQ(nullptr, exec, "Executor singleton is nullptr");
+    return exec->supports(domain);
+}
+
 Network::Network(Graph &graph):
     _fullGraph(&graph),
     _workspace(nullptr),
     _wsSize(graph.WorkspaceSize()),
+    _modelId(_modelCounter.fetch_add(1, std::memory_order_relaxed)),
+    _teeRuntimeRegistered(false),
     _nets{}, _netNum(1) 
 {
     if (_wsSize) {
         _workspace = static_cast<void*>(new char[_wsSize]);
     }
-    split(_netNum);
 }
 
 Network::Network(Graph &graph, const ThreadContextManager *tcm):
     _fullGraph(&graph),
     _workspace(nullptr),
     _wsSize(graph.WorkspaceSize()),
+    _modelId(_modelCounter.fetch_add(1, std::memory_order_relaxed)),
+    _teeRuntimeRegistered(false),
     _nets{}, _netNum(tcm->size())
 {
     if (_wsSize) {
         _workspace = static_cast<void*>(new char[_wsSize]);
     }
-    // 这个版本的 构造函数 在这里绑定 ThreadContextManager
-    // 因此可以提前初始化 net[MAX_CORES_NUM] 
-    // _netNum = tcm->size();
-    split(_netNum);
-
-    // 绑定 Net 与 threadCtx
+    // 这里只记录默认的线程数视图
+    // 真正的切片构造统一延后到 prepare() 中完成
 }
 Network::~Network() {
+    teardown_tee_runtime(this, EXECUTOR, false);
+    _teeRuntimeRegistered = false;
     if (_workspace && _wsSize) { 
         delete[] static_cast<char*>(_workspace);
         _workspace = nullptr;
@@ -98,11 +547,42 @@ Network::~Network() {
     }
 }
 
+void Network::buildExecPartitions() {
+    EXIT_ERROR_CHECK_EQ(nullptr, _fullGraph, "_fullGraph is nullptr");
+    _execPartitions = _partBuilder.build(*_fullGraph);
+}
+
+void Network::buildPartGraph() {
+    _partGraph.build(_execPartitions);
+}
+
+// 把前面分析得到的 ExecutionPartition[] 转成当前运行时真正要消费的 ExecutionPlan
+// 如果 network 被切成多个 Net_t
+// 那每个 Net_t 都要有自己的 execPlan
+void Network::buildExecPlans() {
+    for (UINT net_id = 0; net_id < _netNum; ++net_id) {
+        Net_t &net = _nets[net_id];
+        net.execPlan.clear();
+
+        // ExecutionPartition 里面保存的是 Layer*
+        // 但真正运行时执行的是 LayerSlice*
+        const SliceMap slices = make_slice_map(net.sliceExecOrder);
+        for (auto it = _execPartitions.begin(); it != _execPartitions.end(); ++it) {
+            const ExecutionPartition& part = *it;
+            if (ExecutionDomain::ED_CPU_TEE == part.domain()) {
+                append_partition_unit(net.execPlan, part, slices);
+            } else {
+                append_layer_units(net.execPlan, part, slices);
+            }
+        }
+    }
+}
+
 void Network::split(UINT netNum) {
     if (MAX_CORES_NUM < netNum) EXIT_ERROR("error split netNum = %u", netNum);
     unsigned int coreNum = getCoreCount();
     if (!coreNum || !netNum || coreNum < netNum) 
-        EXIT_ERROR("error split netNum = %u : coreNum = ", netNum, coreNum);
+        EXIT_ERROR("error split netNum = %u : coreNum = %u", netNum, coreNum);
 
     // Layer 决定 如何 切 (how to shard)
     // Graph 决定 能不能 切 (is it legal) (维度是否支持等等)
@@ -121,7 +601,22 @@ void Network::split(UINT netNum) {
 // Network 有 (Graph &graph, const ThreadContextManager *tcm) 版本的析构函数 
 // 原则上 这里传入的 tcm 应该和 析构函数中用的同一个 
 void Network::prepare(ThreadContextManager *tcm, Executor *exec) {
+    EXIT_ERROR_CHECK_EQ(nullptr, tcm, "ThreadContextManager is nullptr");
+    EXIT_ERROR_CHECK_EQ(nullptr, exec, "Executor is nullptr");
+
+    if (_teeRuntimeRegistered) {
+        teardown(exec);
+    }
+
+    _netNum = tcm->size();
     EXIT_ERROR_CHECK_EQ(0, _netNum, "_netNum == 0");
+    split(_netNum);
+
+    buildExecPartitions();
+    buildPartGraph();
+    buildExecPlans();
+    prepare_tee_runtime(this, exec);
+    _teeRuntimeRegistered = (count_tee_partition_units(execPlan()) > 0);
 
     // 为每个 Net_s 对应绑定到 ThreadCtx_s
     // 在启动线程之前做必要的初始化操作 
@@ -134,6 +629,7 @@ void Network::prepare(ThreadContextManager *tcm, Executor *exec) {
             exec->prepare_layer(*it);
         }
     }
+
     ThreadCtx_t *ctx = tcm->caller_ctx();
     ctx->shared->start_flag.store(true, std::memory_order_relaxed);
     ctx->shared->stop_flag.store(false, std::memory_order_relaxed);
@@ -156,6 +652,13 @@ void Network::prepare(ThreadContextManager *tcm, Executor *exec) {
     return;
 }
 
+// 清空 TEE 内数据
+void Network::teardown(Executor *exec) {
+    EXIT_ERROR_CHECK_EQ(nullptr, exec, "Executor is nullptr");
+    teardown_tee_runtime(this, exec, true);
+    _teeRuntimeRegistered = false;
+}
+
 void Network::runNet(ThreadContextManager *tcm, Executor *exec) {
     Net_t &net = _nets[0];
 
@@ -164,7 +667,24 @@ void Network::runNet(ThreadContextManager *tcm, Executor *exec) {
     unsigned total_threads = tcm->size();
     UINT curr = INVALID_UINT_MAX;
 
+    // 目前还是单线程执行的版本 直接按顺序执行就好了
+    // 至于 多线程并行的问题 其实也不是必须的 但是框架写都写了还是留着了
+    if (1 == total_threads) {
+        if (!net.execPlan.empty()) {
+            for (auto it = net.execPlan.units().begin(); it != net.execPlan.units().end(); ++it) {
+                execute_unit(*it, exec, &ctx);
+            }
+            return;
+        }
+        for (auto it = net.sliceExecOrder.begin(); it != net.sliceExecOrder.end(); ++it) {
+            exec->execute_layer(*it, &ctx);
+        }
+        return;
+    }
+
+#if 0
     // 主线程进入默认是持有锁的状态
+    // 下面的代码目前是 不再用了 但是先保留着 以免后续多线程版本的开发需要
     curr = 0;
     shared->mtx.unlock();
     for (auto it = net.sliceExecOrder.begin(); it != net.sliceExecOrder.end(); 
@@ -192,6 +712,7 @@ void Network::runNet(ThreadContextManager *tcm, Executor *exec) {
         // prev = curr;
     }
     shared->mtx.lock();
+#endif
 }
 
 void Network::run(std::initializer_list<Value_t*> inputs,
@@ -227,6 +748,7 @@ void Network::run(const std::vector<Value_t*>& inputs, std::vector<Value_t*>& ou
                 "Network input shape mismatch");
         }
         Value_t& v = in_boundary->output(i);
+        // 这里用的是默认的 PARAM_NONE 不拥有数据
         v.borrowFrom(*inputs[i], PARAM_INPUT);
     }
 

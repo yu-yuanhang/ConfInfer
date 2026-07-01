@@ -6,6 +6,8 @@
 #endif
 
 #include <generic/Singleton.h>
+#include <cstdio>
+#include <cstdlib>
 #include <string>
 
 #if LOGCPP_EXT
@@ -15,6 +17,22 @@
 using std::string;
 
 namespace Kernel {
+
+#if 1
+#define PRINT_HERE_MSG(msg)                                     \
+    do {                                                        \
+        printf("[DEBUG] file: %s, func: %s, line: %d, %s\n",    \
+               __FILE__, __func__, __LINE__, msg);              \
+    } while (0)
+#define PRINT_HERE()                                            \
+    do {                                                        \
+        printf("[DEBUG] file: %s, func: %s, line: %d\n",        \
+               __FILE__, __func__, __LINE__);                   \
+    } while (0)
+#else
+#define PRINT_HERE_MSG(msg)  
+#define PRINT_HERE()   
+#endif
 namespace SingleLog4 {
 
 #if LOGCPP_EXT
@@ -186,16 +204,60 @@ private:
     exit(EXIT_FAILURE);\
 }
 #else
-#define ARGC_CHECK(argc, num)
-#define ERROR_CHECK(ret, num, fmt, ...)
-#define RET_ERROR_CHECK(ret, num, fmt, errorNum, ...)
-#define EXIT_ERROR_CHECK_EQ(ret, num, fmt, ...)
-#define EXIT_ERROR_CHECK_NE(ret, num, fmt, ...)
-#define EXIT_ERROR(fmt, ...)
+#define ARGC_CHECK(argc, num) do {\
+    if ((argc) != (num)) {\
+        std::fprintf(stderr, "[ERROR] %s:%s:%d args error! argc=%d expected=%d\n",\
+                     __FILE__, __func__, __LINE__,\
+                     static_cast<int>(argc), static_cast<int>(num));\
+        return -1;\
+    }\
+} while (0);
+#define ERROR_CHECK(ret, num, fmt, ...) do {\
+    if ((ret) == (num)) {\
+        std::fprintf(stderr, "[ERROR] %s:%s:%d ",\
+                     __FILE__, __func__, __LINE__);\
+        std::fprintf(stderr, fmt, ##__VA_ARGS__);\
+        std::fprintf(stderr, "\n");\
+        return -1;\
+    }\
+} while (0);
+#define RET_ERROR_CHECK(ret, num, fmt, errorNum, ...) do {\
+    if ((ret) == (num)) {\
+        std::fprintf(stderr, "[ERROR] %s:%s:%d ",\
+                     __FILE__, __func__, __LINE__);\
+        std::fprintf(stderr, fmt, ##__VA_ARGS__);\
+        std::fprintf(stderr, "\n");\
+        return errorNum;\
+    }\
+} while (0);
+#define EXIT_ERROR_CHECK_EQ(ret, num, fmt, ...) do {\
+    if ((ret) == (num)) {\
+        std::fprintf(stderr, "[ERROR] %s:%s:%d ",\
+                     __FILE__, __func__, __LINE__);\
+        std::fprintf(stderr, fmt, ##__VA_ARGS__);\
+        std::fprintf(stderr, "\n");\
+        std::exit(EXIT_FAILURE);\
+    }\
+} while (0);
+#define EXIT_ERROR_CHECK_NE(ret, num, fmt, ...) do {\
+    if ((ret) != (num)) {\
+        std::fprintf(stderr, "[ERROR] %s:%s:%d ",\
+                     __FILE__, __func__, __LINE__);\
+        std::fprintf(stderr, fmt, ##__VA_ARGS__);\
+        std::fprintf(stderr, "\n");\
+        std::exit(EXIT_FAILURE);\
+    }\
+} while (0);
+#define EXIT_ERROR(fmt, ...) do {\
+    std::fprintf(stderr, "[ERROR] %s:%s:%d ",\
+                 __FILE__, __func__, __LINE__);\
+    std::fprintf(stderr, fmt, ##__VA_ARGS__);\
+    std::fprintf(stderr, "\n");\
+    std::exit(EXIT_FAILURE);\
+} while (0);
 #endif
 
 
 } // namespace end of Kernel  
 
 #endif
-

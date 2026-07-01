@@ -181,9 +181,10 @@ void Backend_CPU_TEE::prepare(LayerSlice* ls) {
 }
 
 void Backend_CPU_TEE::execute(LayerSlice* ls, ThreadCtx_t* ctx) {
-    (void)ls;
+    EXIT_ERROR_CHECK_EQ(nullptr, ls, "LayerSlice is nullptr");
     (void)ctx;
-    return;
+    EXIT_ERROR("Backend_CPU_TEE is selected for layer id=%u type=%u, but the CI-TA bridge is not integrated yet",
+               ls->layer()->id(), static_cast<UINT>(ls->layer()->type()));
 }
 
 
