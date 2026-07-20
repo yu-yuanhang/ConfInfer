@@ -1,4 +1,4 @@
-#include <core/ProtoExecBridge.h>
+#include <core/ExecBridgeProto.h>
 #include <cstring>
 
 namespace Kernel {
@@ -51,7 +51,7 @@ void unpack_value_blob(const std::vector<Value_t *>& values, const std::vector<u
 
 } // namespace
 
-bool ProtoExecBridge::execute(const ExecUnit& unit, Executor *exec, ThreadCtx_t *ctx) {
+bool ExecBridgeProto::execute(const ExecUnit& unit, Executor *exec, ThreadCtx_t *ctx) {
     confinfer_partition_rsp_t rsp{};
     std::vector<uint8_t> input_blob;
     std::vector<uint8_t> output_blob;
@@ -60,10 +60,10 @@ bool ProtoExecBridge::execute(const ExecUnit& unit, Executor *exec, ThreadCtx_t 
     (void)exec;
     (void)ctx;
 
-    EXIT_ERROR_CHECK_EQ(nullptr, _runner, "ProtoExecBridge runner is nullptr");
+    EXIT_ERROR_CHECK_EQ(nullptr, _runner, "ExecBridgeProto runner is nullptr");
     _last_proto = make_exec_unit_proto(unit);
     EXIT_ERROR_CHECK_EQ(CONFINFER_INVALID_MODEL_ID, _active_model_id,
-                        "ProtoExecBridge active model_id is invalid");
+                        "ExecBridgeProto active model_id is invalid");
     _last_proto.req.model_id = _active_model_id;
     input_blob = pack_value_blob(unit.inputs());
     output_blob.resize(_last_proto.data.req.total_output_bytes);
@@ -99,30 +99,30 @@ bool ProtoExecBridge::execute(const ExecUnit& unit, Executor *exec, ThreadCtx_t 
     }
 
     EXIT_ERROR_CHECK_NE(CONFINFER_PROTOCOL_VERSION, rsp.version,
-        "ProtoExecBridge response version mismatch");
+        "ExecBridgeProto response version mismatch");
     EXIT_ERROR_CHECK_NE(_last_proto.req.domain, rsp.domain,
-        "ProtoExecBridge response domain mismatch");
+        "ExecBridgeProto response domain mismatch");
     EXIT_ERROR_CHECK_NE(_last_proto.req.model_id, rsp.model_id,
-        "ProtoExecBridge response model_id mismatch");
+        "ExecBridgeProto response model_id mismatch");
     EXIT_ERROR_CHECK_NE(_last_proto.req.partition_id, rsp.partition_id,
-        "ProtoExecBridge response partition_id mismatch");
+        "ExecBridgeProto response partition_id mismatch");
     EXIT_ERROR_CHECK_NE(CONFINFER_PART_OK, rsp.status,
-        "ProtoExecBridge remote execution failed");
+        "ExecBridgeProto remote execution failed");
     EXIT_ERROR_CHECK_NE(_last_proto.req.layer_count, rsp.executed_layers,
-        "ProtoExecBridge executed layer count mismatch");
+        "ExecBridgeProto executed layer count mismatch");
     EXIT_ERROR_CHECK_NE(_last_proto.req.output_count, rsp.produced_outputs,
-        "ProtoExecBridge produced output count mismatch");
+        "ExecBridgeProto produced output count mismatch");
 
     unpack_value_blob(unit.outputs(), output_blob);
 
     return true;
 }
 
-bool ProtoExecBridge::registerModel(const confinfer_model_desc_t& desc,
+bool ExecBridgeProto::registerModel(const confinfer_model_desc_t& desc,
                                     confinfer_model_rsp_t *rsp) {
     confinfer_model_rsp_t local_rsp{};
 
-    EXIT_ERROR_CHECK_EQ(nullptr, _register_model, "ProtoExecBridge register_model callback is nullptr");
+    EXIT_ERROR_CHECK_EQ(nullptr, _register_model, "ExecBridgeProto register_model callback is nullptr");
     if (nullptr == rsp) {
         rsp = &local_rsp;
     }
@@ -130,16 +130,16 @@ bool ProtoExecBridge::registerModel(const confinfer_model_desc_t& desc,
         return false;
     }
     EXIT_ERROR_CHECK_NE(CONFINFER_PROTOCOL_VERSION, rsp->version,
-                        "ProtoExecBridge registerModel response version mismatch");
+                        "ExecBridgeProto registerModel response version mismatch");
     EXIT_ERROR_CHECK_NE(desc.model_id, rsp->model_id,
-                        "ProtoExecBridge registerModel response model_id mismatch");
+                        "ExecBridgeProto registerModel response model_id mismatch");
     EXIT_ERROR_CHECK_NE(CONFINFER_MODEL_OK, rsp->status,
-                        "ProtoExecBridge registerModel remote failed");
+                        "ExecBridgeProto registerModel remote failed");
     _active_model_id = desc.model_id;
     return true;
 }
 
-bool ProtoExecBridge::loadParams(const confinfer_load_params_req_t& req,
+bool ExecBridgeProto::loadParams(const confinfer_load_params_req_t& req,
                                  const confinfer_param_desc_t *param_descs,
                                  UINT param_count,
                                  const void *param_blob,
@@ -147,7 +147,7 @@ bool ProtoExecBridge::loadParams(const confinfer_load_params_req_t& req,
                                  confinfer_load_params_rsp_t *rsp) {
     confinfer_load_params_rsp_t local_rsp{};
 
-    EXIT_ERROR_CHECK_EQ(nullptr, _load_params, "ProtoExecBridge load_params callback is nullptr");
+    EXIT_ERROR_CHECK_EQ(nullptr, _load_params, "ExecBridgeProto load_params callback is nullptr");
     if (nullptr == rsp) {
         rsp = &local_rsp;
     }
@@ -161,21 +161,21 @@ bool ProtoExecBridge::loadParams(const confinfer_load_params_req_t& req,
         return false;
     }
     EXIT_ERROR_CHECK_NE(CONFINFER_PROTOCOL_VERSION, rsp->version,
-                        "ProtoExecBridge loadParams response version mismatch");
+                        "ExecBridgeProto loadParams response version mismatch");
     EXIT_ERROR_CHECK_NE(req.model_id, rsp->model_id,
-                        "ProtoExecBridge loadParams response model_id mismatch");
+                        "ExecBridgeProto loadParams response model_id mismatch");
     EXIT_ERROR_CHECK_NE(CONFINFER_PARAM_OK, rsp->status,
-                        "ProtoExecBridge loadParams remote failed");
+                        "ExecBridgeProto loadParams remote failed");
     return true;
 }
 
-bool ProtoExecBridge::registerPartition(const ExecUnit& unit,
+bool ExecBridgeProto::registerPartition(const ExecUnit& unit,
                                         confinfer_model_id_t model_id,
                                         confinfer_partition_rsp_t *rsp) {
     confinfer_partition_rsp_t local_rsp{};
 
     EXIT_ERROR_CHECK_EQ(nullptr, _register_partition,
-                        "ProtoExecBridge register_partition callback is nullptr");
+                        "ExecBridgeProto register_partition callback is nullptr");
     _last_proto = make_exec_unit_proto(unit);
     _last_proto.req.model_id = model_id;
 
@@ -207,24 +207,24 @@ bool ProtoExecBridge::registerPartition(const ExecUnit& unit,
         return false;
     }
     EXIT_ERROR_CHECK_NE(CONFINFER_PROTOCOL_VERSION, rsp->version,
-                        "ProtoExecBridge registerPartition response version mismatch");
+                        "ExecBridgeProto registerPartition response version mismatch");
     EXIT_ERROR_CHECK_NE(_last_proto.req.model_id, rsp->model_id,
-                        "ProtoExecBridge registerPartition response model_id mismatch");
+                        "ExecBridgeProto registerPartition response model_id mismatch");
     EXIT_ERROR_CHECK_NE(_last_proto.req.partition_id, rsp->partition_id,
-                        "ProtoExecBridge registerPartition response partition_id mismatch");
+                        "ExecBridgeProto registerPartition response partition_id mismatch");
     EXIT_ERROR_CHECK_NE(_last_proto.req.domain, rsp->domain,
-                        "ProtoExecBridge registerPartition response domain mismatch");
+                        "ExecBridgeProto registerPartition response domain mismatch");
     EXIT_ERROR_CHECK_NE(CONFINFER_PART_OK, rsp->status,
-                        "ProtoExecBridge registerPartition remote failed");
+                        "ExecBridgeProto registerPartition remote failed");
     return true;
 }
 
-bool ProtoExecBridge::unloadModel(const confinfer_unload_model_req_t& req,
+bool ExecBridgeProto::unloadModel(const confinfer_unload_model_req_t& req,
                                   confinfer_unload_model_rsp_t *rsp) {
     confinfer_unload_model_rsp_t local_rsp{};
 
     EXIT_ERROR_CHECK_EQ(nullptr, _unload_model,
-                        "ProtoExecBridge unload_model callback is nullptr");
+                        "ExecBridgeProto unload_model callback is nullptr");
     if (nullptr == rsp) {
         rsp = &local_rsp;
     }
@@ -232,11 +232,11 @@ bool ProtoExecBridge::unloadModel(const confinfer_unload_model_req_t& req,
         return false;
     }
     EXIT_ERROR_CHECK_NE(CONFINFER_PROTOCOL_VERSION, rsp->version,
-                        "ProtoExecBridge unloadModel response version mismatch");
+                        "ExecBridgeProto unloadModel response version mismatch");
     EXIT_ERROR_CHECK_NE(req.model_id, rsp->model_id,
-                        "ProtoExecBridge unloadModel response model_id mismatch");
+                        "ExecBridgeProto unloadModel response model_id mismatch");
     EXIT_ERROR_CHECK_NE(CONFINFER_UNLOAD_MODEL_OK, rsp->status,
-                        "ProtoExecBridge unloadModel remote failed");
+                        "ExecBridgeProto unloadModel remote failed");
     _active_model_id = CONFINFER_INVALID_MODEL_ID;
     return true;
 }

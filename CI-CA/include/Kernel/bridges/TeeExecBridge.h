@@ -1,7 +1,7 @@
 #ifndef __TEE_EXEC_BRIDGE_H_CA__
 #define __TEE_EXEC_BRIDGE_H_CA__
 
-#include <core/ProtoExecBridge.h>
+#include <core/ExecBridgeProto.h>
 #include <core/Network.h>
 
 #include <confinfer_host.h>
@@ -11,21 +11,21 @@ namespace bridges {
 
 // 这是具体的 TEE bridge 实现
 // TeeExecBridge 持有用来进行通信的资源 confinfer_teec_client_t
-// 和一个 ProtoExecBridge
-// ProtoExecBridge 再通过 runner 使用 _client
+// 和一个 ExecBridgeProto
+// ExecBridgeProto 再通过 runner 使用 _client
 class TeeExecBridge {
 public:
     TeeExecBridge();
     ~TeeExecBridge();
 
     bool open(uint32_t *err_origin = nullptr);
-    // 注册对应的 ProtoExecBridge
+    // 注册对应的 ExecBridgeProto
     bool install(Kernel::core::Executor *exec = EXECUTOR, uint32_t *err_origin = nullptr);
     void uninstall(Kernel::core::Executor *exec = EXECUTOR);
     void close(Kernel::core::Executor *exec = EXECUTOR);
 
-    Kernel::core::ProtoExecBridge& bridge() { return _bridge; }
-    const Kernel::core::ProtoExecBridge& bridge() const { return _bridge; }
+    Kernel::core::ExecBridgeProto& bridge() { return _bridge; }
+    const Kernel::core::ExecBridgeProto& bridge() const { return _bridge; }
 
 private:
     static bool register_model(const confinfer_model_desc_t *desc,
@@ -95,7 +95,7 @@ private:
 private:
     confinfer_teec_client_t _client;
     bool _opened;   // 当前 client 是否已经 open
-    Kernel::core::ProtoExecBridge _bridge;
+    Kernel::core::ExecBridgeProto _bridge;
 };
 
 } // namespace bridges

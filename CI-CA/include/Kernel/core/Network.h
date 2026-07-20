@@ -26,6 +26,8 @@ class Executor;
 // ExecDomainBridge 规定了所有 bridge 至少要能回答两件事
 // 服务于哪个执行域
 // 获得一个 ExecUnit 怎么执行
+// ExecBridgeProto 继承自 ExecDomainBridge 因此
+// ExecBridgeProto 才是真正注册到 Executor 里的 bridge 对象
 class ExecDomainBridge {
 public:
     virtual ~ExecDomainBridge() = default;
@@ -36,7 +38,8 @@ public:
 
 // Executor 对线程不可见 仅仅负责 
 // 执行哪个 Layer 使用哪个 Backend 需要哪些 runtime context
-// 不在 Executor 里 loop topo_order
+// 
+// Executor 负责拿到一个 ExecUnit 决定交给本地 backend 还是交给 bridge
 using BackendList = std::vector<Backend *>;
 // Executor 设计为一种通用的执行器 
 // 本地执行 跨域执行 对上衔接 Network 都统一通过这个就行

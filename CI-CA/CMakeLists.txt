@@ -63,6 +63,7 @@ set(CMAKE_CXX_STANDARD 20)
 ###########################################################################
 # cmake -DLOGCPP_EXT=1 -DCMAKE_PREFIX_PATH="$(python -c 'import torch.utils; print(torch.utils.cmake_prefix_path)')" ..
 # cmake -DLOGCPP_EXT=1 -DRELEASE=0 -DENABLE_TEE_BRIDGE=1 ..
+# cmake -DLOGCPP_EXT=1 -DRELEASE=0 -DENABLE_TEE_BRIDGE=1 -DTRUSTSPAN=1 ..
 
 if(NOT DEFINED LOGCPP_EXT)
     set(LOGCPP_EXT 0 CACHE STRING "value of LOGCPP_EXT")
@@ -72,6 +73,9 @@ if(NOT DEFINED RELEASE)
 endif()
 if(NOT DEFINED ENABLE_TEE_BRIDGE)
     set(ENABLE_TEE_BRIDGE 0 CACHE STRING "value of ENABLE_TEE_BRIDGE")
+endif()
+if(NOT DEFINED TRUSTSPAN)
+    set(TRUSTSPAN 0 CACHE STRING "value of TRUSTSPAN")
 endif()
 ###########################################################################
 message(STATUS "CMake source directory is: ${CMAKE_CURRENT_SOURCE_DIR}")
@@ -83,6 +87,7 @@ message(STATUS "CMake system processor is: ${CMAKE_SYSTEM_PROCESSOR}")
 message(STATUS "CMAKE_C_COMPILER = ${CMAKE_C_COMPILER}")
 message(STATUS "CMAKE_CXX_COMPILER = ${CMAKE_CXX_COMPILER}")
 message(STATUS "CMAKE_SYSROOT = ${CMAKE_SYSROOT}")
+message(STATUS "TRUSTSPAN = ${TRUSTSPAN}")
 
 set(CONFINFER_IS_AARCH64_BUILD FALSE)
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|AARCH64|arm64|ARM64)$")
@@ -214,6 +219,7 @@ endif()
 target_compile_definitions(${PROJECT_NAME} PRIVATE LOGCPP_EXT=${LOGCPP_EXT})
 target_compile_definitions(${PROJECT_NAME} PRIVATE RELEASE=${RELEASE})
 target_compile_definitions(${PROJECT_NAME} PRIVATE ENABLE_TEE_BRIDGE=${ENABLE_TEE_BRIDGE})
+target_compile_definitions(${PROJECT_NAME} PRIVATE TRUSTSPAN=${TRUSTSPAN})
 
 if(CONFINFER_IS_AARCH64_CROSS_BUILD)
     if(CONFINFER_DEPLOY_LIB_DIR)

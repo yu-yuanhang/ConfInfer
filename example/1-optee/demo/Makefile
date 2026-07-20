@@ -1,5 +1,8 @@
 WORK_ROOT := $(abspath $(CURDIR)/../../../../..)
-REPO_ROOT := $(WORK_ROOT)/optee_qemuv8/optee_doc-3.22.0
+$(info WORK_ROOT = $(WORK_ROOT))
+# REPO_ROOT := $(WORK_ROOT)/optee_qemuv8/optee_doc-3.22.0
+#  REPO_ROOT := $(WORK_ROOT)/hikey960/optee_doc-3.22.0
+REPO_ROOT := $(WORK_ROOT)/FVP/FVP-3.22.0
 CI_CA_DIR := $(REPO_ROOT)/CI/ConfInfer/CI-CA
 CI_TA_DIR := $(REPO_ROOT)/CI/ConfInfer/CI-TA
 HOST_DIR := $(REPO_ROOT)/out-br/host

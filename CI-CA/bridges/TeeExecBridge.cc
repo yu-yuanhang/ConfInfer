@@ -186,6 +186,7 @@ bool TeeExecBridge::open(uint32_t *err_origin) {
         return true;
     }
 
+    // 打开 OP-TEE 客户端 context + session
     res = confinfer_teec_open(&_client, &origin);
     if (res != TEEC_SUCCESS) {
         if (nullptr != err_origin) {
@@ -194,6 +195,7 @@ bool TeeExecBridge::open(uint32_t *err_origin) {
         return false;
     }
 
+    // 这里分别注册了 runner 和 model 生命周期的回调函数
     _bridge.setRunner(runner, &_client);
     _bridge.setModelLifecycle(register_model, load_params, register_partition,
                               unload_model, &_client);

@@ -4,7 +4,9 @@ set -eu
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 WORK_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../../../.." && pwd)"
-REPO_ROOT="$WORK_ROOT/optee_qemuv8/optee_doc-3.22.0"
+# REPO_ROOT="$WORK_ROOT/optee_qemuv8/optee_doc-3.22.0"
+# REPO_ROOT="$WORK_ROOT/hikey960/optee_doc-3.22.0"
+REPO_ROOT="$WORK_ROOT/FVP/FVP-3.22.0"
 HOST_DIR="$REPO_ROOT/out-br/host"
 SYSROOT="$HOST_DIR/aarch64-buildroot-linux-gnu/sysroot"
 BIN_DIR="$HOST_DIR/bin"

@@ -1,6 +1,6 @@
 #include <core/Network.h>
 #include <core/BoundaryLayer.h>
-#include <core/ProtoExecBridge.h>
+#include <core/ExecBridgeProto.h>
 #if ENABLE_TEE_BRIDGE
 #include <bridges/TeeExecBridge.h>
 #endif
@@ -169,12 +169,12 @@ bool is_tee_partition_unit(const ExecUnit& unit) {
            unit.type() == ExecUnitType::EU_PARTITION;
 }
 
-ProtoExecBridge *tee_proto_bridge(Executor *exec) {
+ExecBridgeProto *tee_exec_bridge_proto(Executor *exec) {
     ExecDomainBridge *bridge = exec->execBridge(ExecutionDomain::ED_CPU_TEE);
     if (nullptr == bridge) {
         return nullptr;
     }
-    return dynamic_cast<ProtoExecBridge *>(bridge);
+    return dynamic_cast<ExecBridgeProto *>(bridge);
 }
 
 UINT count_tee_partition_units(const ExecutionPlan& plan) {
@@ -283,7 +283,7 @@ void collect_tee_params(const ExecutionPlan& plan,
 // 4. 把参数加载到这个模型上下文里
 // 5. 把每个 TEE 分区注册到这个模型上下文里
 void prepare_tee_runtime(const Network *network, Executor *exec) {
-    ProtoExecBridge *bridge = nullptr;
+    ExecBridgeProto *bridge = nullptr;
     const ExecutionPlan& plan = network->execPlan();
     // 统计当前执行计划中有多少个 TEE 分区执行单元
     const UINT tee_part_count = count_tee_partition_units(plan);
@@ -300,10 +300,10 @@ void prepare_tee_runtime(const Network *network, Executor *exec) {
         return;
     }
 
-    bridge = tee_proto_bridge(exec);
-    EXIT_ERROR_CHECK_EQ(nullptr, bridge, "TEE ProtoExecBridge is not installed");
+    bridge = tee_exec_bridge_proto(exec);
+    EXIT_ERROR_CHECK_EQ(nullptr, bridge, "TEE ExecBridgeProto is not installed");
     EXIT_ERROR_CHECK_EQ(false, bridge->lifecycleReady(),
-                        "TEE ProtoExecBridge lifecycle callbacks are not ready");
+                        "TEE ExecBridgeProto lifecycle callbacks are not ready");
 
     // 当前的设计还是 为了最简化的考量 绑定 TEE 的使用场景
     collect_tee_params(plan, param_descs, param_blob);
@@ -349,7 +349,7 @@ void prepare_tee_runtime(const Network *network, Executor *exec) {
 }
 
 void teardown_tee_runtime(Network *network, Executor *exec, bool strict) {
-    ProtoExecBridge *bridge = nullptr;
+    ExecBridgeProto *bridge = nullptr;
     confinfer_unload_model_req_t req{};
     confinfer_unload_model_rsp_t rsp{};
     bool ok = false;
@@ -358,10 +358,10 @@ void teardown_tee_runtime(Network *network, Executor *exec, bool strict) {
         return;
     }
 
-    bridge = tee_proto_bridge(exec);
+    bridge = tee_exec_bridge_proto(exec);
     if (nullptr == bridge || !bridge->lifecycleReady()) {
         if (strict) {
-            EXIT_ERROR("TEE ProtoExecBridge is not ready for unload");
+            EXIT_ERROR("TEE ExecBridgeProto is not ready for unload");
         }
         return;
     }
@@ -391,6 +391,8 @@ std::atomic<confinfer_model_id_t> Network::_modelCounter{1};
 Executor::Executor(): _by_kind(), _preferred_kind(BackendKind::BK_CPU_REE), _exec_bridges() {
     static Backend_CPU_REE cpu_backend;
     static Backend_CPU_REE_REF cpu_ref_backend;
+    // 再次强调一下 这里的 TEE 后端作为特殊占位符
+    // 其存在逻辑 和 TEE 执行桥的存在逻辑是分开的
     static Backend_CPU_TEE cpu_tee_backend;
     setBackends({&cpu_backend, &cpu_ref_backend, &cpu_tee_backend});
 #if ENABLE_TEE_BRIDGE
@@ -612,9 +614,13 @@ void Network::prepare(ThreadContextManager *tcm, Executor *exec) {
     EXIT_ERROR_CHECK_EQ(0, _netNum, "_netNum == 0");
     split(_netNum);
 
+    // std::vector<ExecutionPartition> build by PartitionBuilder
     buildExecPartitions();
-    buildPartGraph();
+    buildPartGraph();// PartitionGraph build
+    // net_t 内部 ExecutionPlan 初始化 by sliceExecOrder
     buildExecPlans();
+    // 这里针对 TEE 内的情况 开始建立 TEE 内的上下文
+    // 但是 目前这个设计只考虑了 单核的情况
     prepare_tee_runtime(this, exec);
     _teeRuntimeRegistered = (count_tee_partition_units(execPlan()) > 0);
 
