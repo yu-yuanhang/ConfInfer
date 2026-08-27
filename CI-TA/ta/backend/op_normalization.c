@@ -14,7 +14,7 @@ static float param_value_or_default(const ta_param_t *param, uint32_t index, flo
 
 TEE_Result ta_execute_batchnorm2d_fp32(ta_layer_exec_ctx_t *ctx)
 {
-    const confinfer_batchnorm_attr_t *attr = NULL;
+    const confinfer_model_image_batchnorm_attr_t *attr = NULL;
     ta_value_t *input = NULL;
     ta_value_t *output = NULL;
     ta_param_t *weight = NULL;
@@ -32,7 +32,7 @@ TEE_Result ta_execute_batchnorm2d_fp32(ta_layer_exec_ctx_t *ctx)
         return TEE_ERROR_BAD_PARAMETERS;
     }
 
-    attr = (const confinfer_batchnorm_attr_t *)ta_backend_attr(ctx, sizeof(*attr));
+    attr = (const confinfer_model_image_batchnorm_attr_t *)ta_backend_attr(ctx, sizeof(*attr));
     input = ta_backend_input(ctx, 0);
     output = ta_backend_output(ctx, 0);
     weight = ta_backend_param_by_role(ctx, CONFINFER_PARAM_ROLE_WEIGHT);
@@ -73,7 +73,7 @@ TEE_Result ta_execute_batchnorm2d_fp32(ta_layer_exec_ctx_t *ctx)
 
 TEE_Result ta_execute_layernorm_fp32(ta_layer_exec_ctx_t *ctx)
 {
-    const confinfer_norm_attr_t *attr = NULL;
+    const confinfer_model_image_norm_attr_t *attr = NULL;
     ta_value_t *input = NULL;
     ta_value_t *output = NULL;
     ta_param_t *weight = NULL;
@@ -89,7 +89,7 @@ TEE_Result ta_execute_layernorm_fp32(ta_layer_exec_ctx_t *ctx)
         return TEE_ERROR_BAD_PARAMETERS;
     }
 
-    attr = (const confinfer_norm_attr_t *)ta_backend_attr(ctx, sizeof(*attr));
+    attr = (const confinfer_model_image_norm_attr_t *)ta_backend_attr(ctx, sizeof(*attr));
     input = ta_backend_input(ctx, 0);
     output = ta_backend_output(ctx, 0);
     weight = ta_backend_param_by_role(ctx, CONFINFER_PARAM_ROLE_WEIGHT);
@@ -156,7 +156,7 @@ TEE_Result ta_execute_layernorm_fp32(ta_layer_exec_ctx_t *ctx)
 
 TEE_Result ta_execute_groupnorm_fp32(ta_layer_exec_ctx_t *ctx)
 {
-    const confinfer_norm_attr_t *attr = NULL;
+    const confinfer_model_image_norm_attr_t *attr = NULL;
     ta_value_t *input = NULL;
     ta_value_t *output = NULL;
     ta_param_t *weight = NULL;
@@ -177,7 +177,7 @@ TEE_Result ta_execute_groupnorm_fp32(ta_layer_exec_ctx_t *ctx)
         return TEE_ERROR_BAD_PARAMETERS;
     }
 
-    attr = (const confinfer_norm_attr_t *)ta_backend_attr(ctx, sizeof(*attr));
+    attr = (const confinfer_model_image_norm_attr_t *)ta_backend_attr(ctx, sizeof(*attr));
     input = ta_backend_input(ctx, 0);
     output = ta_backend_output(ctx, 0);
     weight = ta_backend_param_by_role(ctx, CONFINFER_PARAM_ROLE_WEIGHT);

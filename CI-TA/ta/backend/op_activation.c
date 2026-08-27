@@ -91,7 +91,7 @@ TEE_Result ta_execute_dropout_fp32(ta_layer_exec_ctx_t *ctx)
 
 TEE_Result ta_execute_softmax_fp32(ta_layer_exec_ctx_t *ctx)
 {
-    const confinfer_axis_attr_t *attr = NULL;
+    const confinfer_model_image_axis_attr_t *attr = NULL;
     ta_value_t *input = NULL;
     ta_value_t *output = NULL;
     float *src = NULL;
@@ -108,7 +108,7 @@ TEE_Result ta_execute_softmax_fp32(ta_layer_exec_ctx_t *ctx)
         return TEE_ERROR_BAD_PARAMETERS;
     }
 
-    attr = (const confinfer_axis_attr_t *)ta_backend_attr(ctx, sizeof(*attr));
+    attr = (const confinfer_model_image_axis_attr_t *)ta_backend_attr(ctx, sizeof(*attr));
     input = ta_backend_input(ctx, 0);
     output = ta_backend_output(ctx, 0);
     if (!attr || !input || !output || !input->data.ptr || !output->data.ptr) {

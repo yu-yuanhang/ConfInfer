@@ -59,15 +59,37 @@ TEE_Result TA_OpenSessionEntryPoint(uint32_t param_types,
         return TEE_ERROR_BAD_PARAMETERS;
     }
 
+    confinfer_ta_session_t *ctx = NULL;
+
     (void)&params;
-    (void)&sess_ctx;
+    ctx = TEE_Malloc(sizeof(*ctx), TEE_MALLOC_FILL_ZERO);
+    if (!ctx) {
+        return TEE_ERROR_OUT_OF_MEMORY;
+    }
+    *sess_ctx = ctx;
     IMSG("ConfInfer TA session opened");
     return TEE_SUCCESS;
 }
 
 void TA_CloseSessionEntryPoint(void __maybe_unused *sess_ctx)
 {
-    (void)&sess_ctx;
+    confinfer_ta_session_t *ctx = (confinfer_ta_session_t *)sess_ctx;
+
+    if (ctx) {
+        if (ctx->prepare_image_upload.buffer) {
+            TEE_Free(ctx->prepare_image_upload.buffer);
+            ctx->prepare_image_upload.buffer = NULL;
+        }
+        if (ctx->exec_partition_upload.input_buffer) {
+            TEE_Free(ctx->exec_partition_upload.input_buffer);
+            ctx->exec_partition_upload.input_buffer = NULL;
+        }
+        if (ctx->exec_partition_upload.output_buffer) {
+            TEE_Free(ctx->exec_partition_upload.output_buffer);
+            ctx->exec_partition_upload.output_buffer = NULL;
+        }
+        TEE_Free(ctx);
+    }
     IMSG("ConfInfer TA session closed");
 }
 
@@ -76,23 +98,33 @@ TEE_Result TA_InvokeCommandEntryPoint(void __maybe_unused *sess_ctx,
                                       uint32_t param_types,
                                       TEE_Param params[4])
 {
-    (void)&sess_ctx;
-
     switch (cmd_id) {
-    case TA_CONFINFER_CMD_REGISTER_MODEL:
-        return confinfer_ta_register_model(param_types, params);
-    case TA_CONFINFER_CMD_LOAD_PARAMS:
-        return confinfer_ta_load_params(param_types, params);
-    case TA_CONFINFER_CMD_REGISTER_PARTITION:
-        return confinfer_ta_register_partition(param_types, params);
+    case TA_CONFINFER_CMD_PREPARE_MODEL_IMAGE:
+        return confinfer_ta_prepare_model_image(sess_ctx, param_types, params);
+    case TA_CONFINFER_CMD_PREPARE_MODEL_IMAGE_BEGIN:
+        return confinfer_ta_prepare_model_image_begin(sess_ctx, param_types, params);
+    case TA_CONFINFER_CMD_PREPARE_MODEL_IMAGE_CHUNK:
+        return confinfer_ta_prepare_model_image_chunk(sess_ctx, param_types, params);
+    case TA_CONFINFER_CMD_PREPARE_MODEL_IMAGE_END:
+        return confinfer_ta_prepare_model_image_end(sess_ctx, param_types, params);
     case TA_CONFINFER_CMD_EXEC_PARTITION:
-        return confinfer_ta_exec_partition(param_types, params);
+        return confinfer_ta_exec_partition(sess_ctx, param_types, params);
+    case TA_CONFINFER_CMD_EXEC_PARTITION_BEGIN:
+        return confinfer_ta_exec_partition_begin(sess_ctx, param_types, params);
+    case TA_CONFINFER_CMD_EXEC_PARTITION_INPUT_CHUNK:
+        return confinfer_ta_exec_partition_input_chunk(sess_ctx, param_types, params);
+    case TA_CONFINFER_CMD_EXEC_PARTITION_RUN:
+        return confinfer_ta_exec_partition_run(sess_ctx, param_types, params);
+    case TA_CONFINFER_CMD_EXEC_PARTITION_OUTPUT_CHUNK:
+        return confinfer_ta_exec_partition_output_chunk(sess_ctx, param_types, params);
+    case TA_CONFINFER_CMD_EXEC_PARTITION_END:
+        return confinfer_ta_exec_partition_end(sess_ctx, param_types, params);
     case TA_CONFINFER_CMD_UNLOAD_MODEL:
-        return confinfer_ta_unload_model(param_types, params);
+        return confinfer_ta_unload_model(sess_ctx, param_types, params);
     case TA_CONFINFER_CMD_INC_VALUE:
-        return confinfer_ta_inc_value(param_types, params);
+        return confinfer_ta_inc_value(sess_ctx, param_types, params);
     case TA_CONFINFER_CMD_DEC_VALUE:
-        return confinfer_ta_dec_value(param_types, params);
+        return confinfer_ta_dec_value(sess_ctx, param_types, params);
     default:
         return TEE_ERROR_BAD_PARAMETERS;
     }

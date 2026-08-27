@@ -9,7 +9,6 @@ int main(int argc, char *argv[]) {
     (void)argc;
     (void)argv;
 
-    RUNTIME->setThreadsNum(1);
 
     Conv2d shared_conv(3, 3, {3, 3}, {1, 1}, {1, 1, 1, 1});
     MaxPool2d pool1({2, 2});
@@ -27,7 +26,7 @@ int main(int argc, char *argv[]) {
         { GraphOutputSlot("output", l3.output()) }
     );
     std::cout << "build network..." << std::endl;
-    Network network(graph, RUNTIME);
+    Network network(graph);
 
     Value_t runtime_input({1, 3, 8, 8});
     runtime_input.alloc();

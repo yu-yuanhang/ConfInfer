@@ -45,12 +45,12 @@ struct GroupNormPlan {
 };
 
 template <typename LayerT>
-LayerT* checked_layer(core::LayerSlice* ls, const char* name) {
-    EXIT_ERROR_CHECK_EQ(nullptr, ls, "LayerSlice is nullptr");
-    auto* layer = dynamic_cast<LayerT*>(ls->layer());
-    EXIT_ERROR_CHECK_EQ(nullptr, layer, "%s layer type mismatch", name);
-    ls->setImpl(layer);
-    return layer;
+LayerT* checked_layer(core::Layer* layer, const char* name) {
+    EXIT_ERROR_CHECK_EQ(nullptr, layer, "Layer is nullptr");
+    auto* typed = dynamic_cast<LayerT*>(layer);
+    EXIT_ERROR_CHECK_EQ(nullptr, typed, "%s layer type mismatch", name);
+    layer->setImpl(typed);
+    return typed;
 }
 
 const FLOAT* fp32_ptr_or_null(const core::Data_t* data) {
@@ -81,8 +81,8 @@ void delete_groupnorm_plan(void* ptr) {
 }
 } // namespace
 
-void prepare_batchnorm2d(core::LayerSlice *ls) {
-    auto* bn = checked_layer<core::BatchNorm2d_L>(ls, "BatchNorm2d");
+void prepare_batchnorm2d(core::Layer *layer) {
+    auto* bn = checked_layer<core::BatchNorm2d_L>(layer, "BatchNorm2d");
     core::Value_t& input = bn->input(0);
     core::Value_t& output = bn->output();
     require_ready_output(output);
@@ -99,16 +99,16 @@ void prepare_batchnorm2d(core::LayerSlice *ls) {
     plan->batch_stride = plan->channels * plan->spatial;
     plan->eps = bn->eps();
     plan->track_running_stats = bn->trackRunningStats();
-    ls->setCache(plan, delete_batchnorm2d_plan);
+    layer->setCache(plan, delete_batchnorm2d_plan);
 }
 
-void execute_batchnorm2d(core::LayerSlice *ls, ThreadCtx_t *ctx) {
+void execute_batchnorm2d(core::Layer *layer, core::ExecContext_t *ctx) {
     (void)ctx;
-    auto* plan = ls->cache<BatchNorm2dPlan>();
+    auto* plan = layer->cache<BatchNorm2dPlan>();
     EXIT_ERROR_CHECK_EQ(nullptr, plan, "BatchNorm2d plan is nullptr");
 
-    core::Value_t& input = ls->impl<core::BatchNorm2d_L>()->input(0);
-    core::Value_t& output = ls->impl<core::BatchNorm2d_L>()->output();
+    core::Value_t& input = layer->impl<core::BatchNorm2d_L>()->input(0);
+    core::Value_t& output = layer->impl<core::BatchNorm2d_L>()->output();
     require_runtime_input(input, "BatchNorm2d input");
 
     FLOAT* in_ptr = static_cast<FLOAT*>(input.data.ptr);
@@ -151,8 +151,8 @@ void execute_batchnorm2d(core::LayerSlice *ls, ThreadCtx_t *ctx) {
     }
 }
 
-void prepare_layernorm(core::LayerSlice *ls) {
-    auto* ln = checked_layer<core::LayerNorm_L>(ls, "LayerNorm");
+void prepare_layernorm(core::Layer *layer) {
+    auto* ln = checked_layer<core::LayerNorm_L>(layer, "LayerNorm");
     core::Value_t& input = ln->input(0);
     core::Value_t& output = ln->output();
     require_ready_output(output);
@@ -173,16 +173,16 @@ void prepare_layernorm(core::LayerSlice *ls) {
     plan->norm_size = norm_size;
     plan->outer = input.data.shape.size / norm_size;
     plan->eps = ln->eps();
-    ls->setCache(plan, delete_layernorm_plan);
+    layer->setCache(plan, delete_layernorm_plan);
 }
 
-void execute_layernorm(core::LayerSlice *ls, ThreadCtx_t *ctx) {
+void execute_layernorm(core::Layer *layer, core::ExecContext_t *ctx) {
     (void)ctx;
-    auto* plan = ls->cache<LayerNormPlan>();
+    auto* plan = layer->cache<LayerNormPlan>();
     EXIT_ERROR_CHECK_EQ(nullptr, plan, "LayerNorm plan is nullptr");
 
-    core::Value_t& input = ls->impl<core::LayerNorm_L>()->input(0);
-    core::Value_t& output = ls->impl<core::LayerNorm_L>()->output();
+    core::Value_t& input = layer->impl<core::LayerNorm_L>()->input(0);
+    core::Value_t& output = layer->impl<core::LayerNorm_L>()->output();
     require_runtime_input(input, "LayerNorm input");
 
     FLOAT* in_ptr = static_cast<FLOAT*>(input.data.ptr);
@@ -204,8 +204,8 @@ void execute_layernorm(core::LayerSlice *ls, ThreadCtx_t *ctx) {
     }
 }
 
-void prepare_groupnorm(core::LayerSlice *ls) {
-    auto* gn = checked_layer<core::GroupNorm_L>(ls, "GroupNorm");
+void prepare_groupnorm(core::Layer *layer) {
+    auto* gn = checked_layer<core::GroupNorm_L>(layer, "GroupNorm");
     core::Value_t& input = gn->input(0);
     core::Value_t& output = gn->output();
     require_ready_output(output);
@@ -230,16 +230,16 @@ void prepare_groupnorm(core::LayerSlice *ls) {
     plan->batch_stride = plan->channels * plan->spatial;
     plan->group_count = plan->group_size * plan->spatial;
     plan->eps = gn->eps();
-    ls->setCache(plan, delete_groupnorm_plan);
+    layer->setCache(plan, delete_groupnorm_plan);
 }
 
-void execute_groupnorm(core::LayerSlice *ls, ThreadCtx_t *ctx) {
+void execute_groupnorm(core::Layer *layer, core::ExecContext_t *ctx) {
     (void)ctx;
-    auto* plan = ls->cache<GroupNormPlan>();
+    auto* plan = layer->cache<GroupNormPlan>();
     EXIT_ERROR_CHECK_EQ(nullptr, plan, "GroupNorm plan is nullptr");
 
-    core::Value_t& input = ls->impl<core::GroupNorm_L>()->input(0);
-    core::Value_t& output = ls->impl<core::GroupNorm_L>()->output();
+    core::Value_t& input = layer->impl<core::GroupNorm_L>()->input(0);
+    core::Value_t& output = layer->impl<core::GroupNorm_L>()->output();
     require_runtime_input(input, "GroupNorm input");
 
     FLOAT* in_ptr = static_cast<FLOAT*>(input.data.ptr);

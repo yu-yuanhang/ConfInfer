@@ -6,185 +6,187 @@ namespace Kernel {
 namespace backend {
 
 namespace {
-void bind_cpu_exec(LayerSlice* ls, LayerType type) {
-    EXIT_ERROR_CHECK_EQ(nullptr, ls, "LayerSlice is nullptr");
+void bind_cpu_exec(Layer* layer, LayerType type) {
+    EXIT_ERROR_CHECK_EQ(nullptr, layer, "Layer is nullptr");
 
     switch (type) {
         case LayerType::GRAPH_INPUT:
-            cpu::prepare_graph_input(ls);
-            ls->setExec(cpu::execute_graph_input);
+            cpu::prepare_graph_input(layer);
+            layer->setExec(cpu::execute_graph_input);
             break;
         case LayerType::GRAPH_OUTPUT:
-            cpu::prepare_graph_output(ls);
-            ls->setExec(cpu::execute_graph_output);
+            cpu::prepare_graph_output(layer);
+            layer->setExec(cpu::execute_graph_output);
             break;
         case LayerType::RELU:
-            cpu::prepare_relu(ls);
-            ls->setExec(cpu::execute_relu);
+            cpu::prepare_relu(layer);
+            layer->setExec(cpu::execute_relu);
             break;
         case LayerType::SIGMOID:
-            cpu::prepare_sigmoid(ls);
-            ls->setExec(cpu::execute_sigmoid);
+            cpu::prepare_sigmoid(layer);
+            layer->setExec(cpu::execute_sigmoid);
             break;
         case LayerType::DROPOUT:
-            cpu::prepare_dropout(ls);
-            ls->setExec(cpu::execute_dropout);
+            cpu::prepare_dropout(layer);
+            layer->setExec(cpu::execute_dropout);
             break;
         case LayerType::FLATTEN:
-            cpu::prepare_flatten(ls);
-            ls->setExec(cpu::execute_flatten);
+            cpu::prepare_flatten(layer);
+            layer->setExec(cpu::execute_flatten);
             break;
         case LayerType::SOFTMAX:
-            cpu::prepare_softmax(ls);
-            ls->setExec(cpu::execute_softmax);
+            cpu::prepare_softmax(layer);
+            layer->setExec(cpu::execute_softmax);
             break;
         case LayerType::ADD:
-            cpu::prepare_add(ls);
-            ls->setExec(cpu::execute_add);
+            cpu::prepare_add(layer);
+            layer->setExec(cpu::execute_add);
             break;
         case LayerType::BIASADD:
-            cpu::prepare_biasadd(ls);
-            ls->setExec(cpu::execute_biasadd);
+            cpu::prepare_biasadd(layer);
+            layer->setExec(cpu::execute_biasadd);
             break;
         case LayerType::CONCAT:
-            cpu::prepare_concat(ls);
-            ls->setExec(cpu::execute_concat);
+            cpu::prepare_concat(layer);
+            layer->setExec(cpu::execute_concat);
             break;
         case LayerType::MATMUL:
-            cpu::prepare_matmul(ls);
-            ls->setExec(cpu::execute_matmul);
+            cpu::prepare_matmul(layer);
+            layer->setExec(cpu::execute_matmul);
             break;
         case LayerType::LINEAR:
-            cpu::prepare_linear(ls);
-            ls->setExec(cpu::execute_linear);
+            cpu::prepare_linear(layer);
+            layer->setExec(cpu::execute_linear);
             break;
         case LayerType::CONV2D:
-            cpu::prepare_conv2d(ls);
-            ls->setExec(cpu::execute_conv2d);
+            cpu::prepare_conv2d(layer);
+            layer->setExec(cpu::execute_conv2d);
             break;
         case LayerType::MAXPOOL2D:
-            cpu::prepare_maxpool2d(ls);
-            ls->setExec(cpu::execute_maxpool2d);
+            cpu::prepare_maxpool2d(layer);
+            layer->setExec(cpu::execute_maxpool2d);
             break;
         case LayerType::AVGPOOL2D:
-            cpu::prepare_avgpool2d(ls);
-            ls->setExec(cpu::execute_avgpool2d);
+            cpu::prepare_avgpool2d(layer);
+            layer->setExec(cpu::execute_avgpool2d);
             break;
         case LayerType::ADAPTIVEAVGPOOL2D:
-            cpu::prepare_adaptiveavgpool2d(ls);
-            ls->setExec(cpu::execute_adaptiveavgpool2d);
+            cpu::prepare_adaptiveavgpool2d(layer);
+            layer->setExec(cpu::execute_adaptiveavgpool2d);
             break;
         case LayerType::ADAPTIVEMAXPOOL2D:
-            cpu::prepare_adaptivemaxpool2d(ls);
-            ls->setExec(cpu::execute_adaptivemaxpool2d);
+            cpu::prepare_adaptivemaxpool2d(layer);
+            layer->setExec(cpu::execute_adaptivemaxpool2d);
             break;
         case LayerType::BATCHNORM2D:
-            cpu::prepare_batchnorm2d(ls);
-            ls->setExec(cpu::execute_batchnorm2d);
+            cpu::prepare_batchnorm2d(layer);
+            layer->setExec(cpu::execute_batchnorm2d);
             break;
         case LayerType::LAYERNORM:
-            cpu::prepare_layernorm(ls);
-            ls->setExec(cpu::execute_layernorm);
+            cpu::prepare_layernorm(layer);
+            layer->setExec(cpu::execute_layernorm);
             break;
         case LayerType::GROUPNORM:
-            cpu::prepare_groupnorm(ls);
-            ls->setExec(cpu::execute_groupnorm);
+            cpu::prepare_groupnorm(layer);
+            layer->setExec(cpu::execute_groupnorm);
             break;
         default:
             EXIT_ERROR("Backend_CPU_REE unsupported layer type: %u", static_cast<UINT>(type));
     }
 }
 
-void bind_cpu_ref_exec(LayerSlice* ls, LayerType type) {
-    EXIT_ERROR_CHECK_EQ(nullptr, ls, "LayerSlice is nullptr");
+void bind_cpu_ref_exec(Layer* layer, LayerType type) {
+    EXIT_ERROR_CHECK_EQ(nullptr, layer, "Layer is nullptr");
 
     switch (type) {
         case LayerType::GRAPH_INPUT:
-            cpu_ref::prepare_graph_input(ls);
-            ls->setExec(cpu_ref::execute_graph_input);
+            cpu_ref::prepare_graph_input(layer);
+            layer->setExec(cpu_ref::execute_graph_input);
             break;
         case LayerType::GRAPH_OUTPUT:
-            cpu_ref::prepare_graph_output(ls);
-            ls->setExec(cpu_ref::execute_graph_output);
+            cpu_ref::prepare_graph_output(layer);
+            layer->setExec(cpu_ref::execute_graph_output);
             break;
         case LayerType::RELU:
-            cpu_ref::prepare_relu(ls);
-            ls->setExec(cpu_ref::execute_relu);
+            cpu_ref::prepare_relu(layer);
+            layer->setExec(cpu_ref::execute_relu);
             break;
         case LayerType::DROPOUT:
-            cpu_ref::prepare_dropout(ls);
-            ls->setExec(cpu_ref::execute_dropout);
+            cpu_ref::prepare_dropout(layer);
+            layer->setExec(cpu_ref::execute_dropout);
             break;
         case LayerType::FLATTEN:
-            cpu_ref::prepare_flatten(ls);
-            ls->setExec(cpu_ref::execute_flatten);
+            cpu_ref::prepare_flatten(layer);
+            layer->setExec(cpu_ref::execute_flatten);
             break;
         case LayerType::LINEAR:
-            cpu_ref::prepare_linear(ls);
-            ls->setExec(cpu_ref::execute_linear);
+            cpu_ref::prepare_linear(layer);
+            layer->setExec(cpu_ref::execute_linear);
             break;
         case LayerType::CONV2D:
-            cpu_ref::prepare_conv2d(ls);
-            ls->setExec(cpu_ref::execute_conv2d);
+            cpu_ref::prepare_conv2d(layer);
+            layer->setExec(cpu_ref::execute_conv2d);
             break;
         case LayerType::ADAPTIVEAVGPOOL2D:
-            cpu_ref::prepare_adaptiveavgpool2d(ls);
-            ls->setExec(cpu_ref::execute_adaptiveavgpool2d);
+            cpu_ref::prepare_adaptiveavgpool2d(layer);
+            layer->setExec(cpu_ref::execute_adaptiveavgpool2d);
             break;
         case LayerType::BATCHNORM2D:
-            cpu_ref::prepare_batchnorm2d(ls);
-            ls->setExec(cpu_ref::execute_batchnorm2d);
+            cpu_ref::prepare_batchnorm2d(layer);
+            layer->setExec(cpu_ref::execute_batchnorm2d);
             break;
         default:
             EXIT_ERROR("Backend_CPU_REE_REF unsupported layer type: %u", static_cast<UINT>(type));
     }
 }
+
 } // namespace
 
-void Backend_CPU_REE::prepare(LayerSlice* ls) {
-    EXIT_ERROR_CHECK_EQ(nullptr, ls, "LayerSlice is nullptr");
-    Layer* l = ls->layer();
-    EXIT_ERROR_CHECK_EQ(nullptr, l, "Layer is nullptr");
-    // prepare 阶段绑定 后端 和 运行时 后续 execute 就不需要重复这些操作
-    ls->setBackend(this);
-    bind_cpu_exec(ls, l->type());
-}
-
-void Backend_CPU_REE::execute(LayerSlice* ls, ThreadCtx_t* ctx) {
-    EXIT_ERROR_CHECK_EQ(nullptr, ls, "LayerSlice is nullptr");
-    if (nullptr == ls->exec()) {
-        prepare(ls);
-    }
-    ls->execute(ctx);
-}
-
-void Backend_CPU_REE_REF::prepare(LayerSlice* ls) {
-    EXIT_ERROR_CHECK_EQ(nullptr, ls, "LayerSlice is nullptr");
-    Layer* l = ls->layer();
-    EXIT_ERROR_CHECK_EQ(nullptr, l, "Layer is nullptr");
-    ls->setBackend(this);
-    bind_cpu_ref_exec(ls, l->type());
-}
-
-void Backend_CPU_REE_REF::execute(LayerSlice* ls, ThreadCtx_t* ctx) {
-    EXIT_ERROR_CHECK_EQ(nullptr, ls, "LayerSlice is nullptr");
-    if (nullptr == ls->exec()) {
-        prepare(ls);
-    }
-    ls->execute(ctx);
-}
-
-void Backend_CPU_TEE::prepare(LayerSlice* ls) {
-    EXIT_ERROR_CHECK_EQ(nullptr, ls, "LayerSlice is nullptr");
-    ls->setBackend(this);
-    ls->setExec(nullptr);
-}
-
-void Backend_CPU_TEE::execute(LayerSlice* ls, ThreadCtx_t* ctx) {
-    EXIT_ERROR_CHECK_EQ(nullptr, ls, "LayerSlice is nullptr");
+void Backend::prepare(const ExecPartition& part, ExecContext_t* ctx) {
     (void)ctx;
-    EXIT_ERROR("Backend_CPU_TEE is selected for layer id=%u type=%u, but the CI-TA bridge is not integrated yet",
-               ls->layer()->id(), static_cast<UINT>(ls->layer()->type()));
+    for (auto it = part.topo().begin(); it != part.topo().end(); ++it) {
+        prepare(*it);
+    }
+}
+
+void Backend::execute(const ExecPartition& part, ExecContext_t* ctx) {
+    for (auto it = part.topo().begin(); it != part.topo().end(); ++it) {
+        execute(*it, ctx);
+    }
+}
+
+void Backend::resetRuntime(ExecContext_t* ctx, bool strict) {
+    (void)ctx;
+    (void)strict;
+}
+
+void Backend_CPU_REE::prepare(Layer* layer) {
+    EXIT_ERROR_CHECK_EQ(nullptr, layer, "Layer is nullptr");
+    // prepare 阶段绑定 后端 和 运行时 后续 execute 就不需要重复这些操作
+    layer->setBackend(this);
+    bind_cpu_exec(layer, layer->type());
+}
+
+void Backend_CPU_REE::execute(Layer* layer, ExecContext_t* ctx) {
+    EXIT_ERROR_CHECK_EQ(nullptr, layer, "Layer is nullptr");
+    if (nullptr == layer->exec()) {
+        prepare(layer);
+    }
+    layer->execute(ctx);
+}
+
+void Backend_CPU_REE_REF::prepare(Layer* layer) {
+    EXIT_ERROR_CHECK_EQ(nullptr, layer, "Layer is nullptr");
+    layer->setBackend(this);
+    bind_cpu_ref_exec(layer, layer->type());
+}
+
+void Backend_CPU_REE_REF::execute(Layer* layer, ExecContext_t* ctx) {
+    EXIT_ERROR_CHECK_EQ(nullptr, layer, "Layer is nullptr");
+    if (nullptr == layer->exec()) {
+        prepare(layer);
+    }
+    layer->execute(ctx);
 }
 
 

@@ -52,7 +52,6 @@ static bool check_tensor_i32(const Kernel::core::Value_t& value,
 int main() {
     using namespace Kernel::core;
 
-    RUNTIME->setThreadsNum(1);
 
     Value_t graph_input({1, 1, 4, 4});
 
@@ -74,7 +73,7 @@ int main() {
             GraphOutputSlot("adaptive_max_idx", adaptive_max_layer.output(OutputKind::Indices))
         }
     );
-    Network network(graph, RUNTIME);
+    Network network(graph);
 
     Value_t runtime_input({1, 1, 4, 4});
     runtime_input.alloc();

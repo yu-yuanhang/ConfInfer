@@ -4,7 +4,46 @@ set -eu
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 CI_TA_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
-REPO_ROOT="$(CDPATH= cd -- "$CI_TA_DIR/../../.." && pwd)"
+
+find_repo_root_from() {
+    local start="$1"
+    local dir=""
+
+    dir="$(CDPATH= cd -- "$start" && pwd)"
+    while [ "$dir" != "/" ]; do
+        if [ -d "$dir/optee_examples" ]; then
+            printf '%s\n' "$dir"
+            return 0
+        fi
+        dir="$(dirname "$dir")"
+    done
+    return 1
+}
+
+resolve_repo_root() {
+    local root=""
+    local source_root=""
+
+    if [ -n "${CONFINFER_CI_TA_REPO_ROOT:-}" ]; then
+        root="$(CDPATH= cd -- "$CONFINFER_CI_TA_REPO_ROOT" && pwd)"
+    elif root="$(find_repo_root_from "$PWD")"; then
+        :
+    else
+        source_root="$(CDPATH= cd -- "$CI_TA_DIR/../../.." && pwd)"
+        if [ -d "$source_root/FVP/FVP-3.22.0/optee_examples" ]; then
+            root="$source_root/FVP/FVP-3.22.0"
+        elif [ -d "$source_root/optee_examples" ]; then
+            root="$source_root"
+        else
+            echo "Unable to locate repo root containing optee_examples. Set CONFINFER_CI_TA_REPO_ROOT explicitly." >&2
+            exit 1
+        fi
+    fi
+
+    printf '%s\n' "$root"
+}
+
+REPO_ROOT="$(resolve_repo_root)"
 TARGET_DIR="$REPO_ROOT/optee_examples/CI-TA"
 
 usage() {
@@ -55,6 +94,7 @@ SYNC_DIRS=(
 )
 
 echo "CI-TA source dir : $CI_TA_DIR"
+echo "Repo root        : $REPO_ROOT"
 echo "Sync target dir  : $TARGET_DIR"
 
 sync_one() {

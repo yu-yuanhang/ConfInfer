@@ -136,7 +136,6 @@ int main(int argc, char *argv[]) {
     const MobileNetRunOptions opts = parse_options(argc, argv);
 
     if (!opts.load_only && !opts.dataset_only) {
-        RUNTIME->setThreadsNum(1);
         std::cout << "[stage] runtime ready" << std::endl;
     }
 
@@ -153,12 +152,12 @@ int main(int argc, char *argv[]) {
     const ParamBindingTable bindings = model.build_param_bindings();
     std::cout << "[stage] model built" << std::endl;
 
-    // Stage 2: instantiate graph and runtime network from the model.
+    // Stage 2: instantiate graph and runtime Network from the model.
     Graph graph(
         { GraphInputSlot("input", model.graph_input()) },
         { GraphOutputSlot("output", model.output_layer().output()) }
     );
-    Network network(graph, RUNTIME);
+    Network network(graph);
     std::cout << "[stage] graph built" << std::endl;
     std::cout << "[stage] network created" << std::endl;
 
@@ -173,7 +172,7 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
-    // Stage 4: prepare runtime execution views, including partitions.
+    // Stage 4: build runtime execution partitions / plan and prepare layers.
     run_partition_stage(opts, network);
     if (opts.partition_only) {
         std::cout << "partition validation ok" << std::endl;

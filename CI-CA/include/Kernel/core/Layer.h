@@ -6,10 +6,6 @@
 #include <generic/utils.h>
 
 namespace Kernel {
-// 运行时环境的准备 和一些 合法性检查 还是要和 execute 解耦开
-struct ThreadCtx_s;
-typedef struct ThreadCtx_s ThreadCtx_t;
-
 namespace backend { class Backend; } // namespace end of backend
 
 namespace core {
@@ -19,7 +15,8 @@ class network;
 class Graph;
 class OpSignature;
 class Layer;
-class LayerSlice;
+struct ExecContext_s;
+typedef struct ExecContext_s ExecContext_t;
 
 enum LayerFlags : uint32_t {
     LF_NONE             = 0,
@@ -150,31 +147,6 @@ private:
     std::vector<ParamRole> order;
 };
 
-typedef struct SliceDesc_s {
-    // 通用 slice 信息
-    UINT sliceId;
-    UINT sliceNum;
-
-    // ===== 数据维度相关 =====
-    // 输入 offset / size
-    std::vector<UINT> inputOffset;
-    std::vector<UINT> inputExtent;
-
-    // 输出 offset / size
-    std::vector<UINT> outputOffset;
-    std::vector<UINT> outputExtent;
-
-    // ===== 参数相关 =====
-    // 比如 conv 的 weight / bias 偏移
-    std::vector<UINT> paramOffset;
-    std::vector<UINT> paramExtent;
-
-    // workspace 偏移
-    UINT workspaceOffset;
-    UINT workspaceSize;
-
-} SliceDesc_t;
-
 class Layer {
 // Graph 视角下只有 Layer 
 friend class Backend;
@@ -183,6 +155,8 @@ friend class Graph;
 friend class OpSignature;
 friend class Node<Layer>;
 public:
+    using ExecFn = void (*)(Layer*, ExecContext_t*);
+    using CacheDeleter = void (*)(void*);
 
 protected:
     // layer 作为计算图节点 其释放并不由自己管理
@@ -190,17 +164,11 @@ protected:
     Layer() = delete;
     Layer(LayerType type, OpSignature *opSignature);
     Layer(const Layer &rhs);
-    // virtual bool sliceable() const { return false; }
     inline uint32_t flags() { return _lf; }
 
     virtual void makeOutputs() = 0;
     virtual UINT calcWorkspaceSize() = 0;
     virtual void makeParams(Params *params) = 0;
-    // 针对某些简单的算子 给出一个默认版本
-    virtual LayerSlice *makeSliceDesc(UINT sliceId, UINT sliceNum);
-    // 判断 Num == 0 / Num == 1 判断是否支持纵向切分 
-    // 其他输入判断切分维度是否合法
-    virtual bool sliceable(UINT Num = 0) const { return true;/* 后续补充 switch 基于类型简单判断*/}
 private:
     void linkInit();    // link 过程调用派生类相关虚函数接口
     // bind_inputs 用于构建计算图结构 
@@ -211,6 +179,7 @@ public:
     inline LayerType type() const { return _type; }
     inline UINT id() const { return _id; }
     inline uint32_t lf() const { return _lf; }
+    inline UINT workspaceSize() const { return _workspaceSize; }
     inline const Params *params() const { return _params; }
     inline const Data_t *param(ParamRole role) const {
         return _params ? _params->get(role) : nullptr;
@@ -265,6 +234,26 @@ public:
     Layer &requireTEE(bool enable = true);
     Layer &useLocal(bool enable = true);
     inline BOOL isInTEE() const { return static_cast<BOOL>(_lf & LF_REQUIRE_TEE); }
+    Backend* backend() const { return _backend; }
+    ExecFn exec() const { return _exec; }
+    template <typename T>
+    T* impl() const { return static_cast<T*>(_impl); }
+    template <typename T>
+    T* cache() const { return static_cast<T*>(_cache); }
+    void setBackend(Backend* backend) { _backend = backend; }
+    void setExec(ExecFn exec) { _exec = exec; }
+    void setImpl(void* impl) { _impl = impl; }
+    void setCache(void* cache, CacheDeleter deleter) {
+        if (nullptr != _cache_deleter && nullptr != _cache) {
+            _cache_deleter(_cache);
+        }
+        _cache = cache;
+        _cache_deleter = deleter;
+    }
+    void execute(ExecContext_t* ctx) const {
+        EXIT_ERROR_CHECK_EQ(nullptr, _exec, "Layer execute fn is nullptr");
+        _exec(const_cast<Layer*>(this), ctx);
+    }
 
 protected:
     // 从设计原则上 Layer ID 应该是 Graph 内唯一
@@ -299,6 +288,11 @@ protected:
     UINT _workspaceSize;    // workspace Layers 共用 (单位 / B)
     Params *_params;
     // ====================================================
+    Backend* _backend;
+    ExecFn _exec;
+    void* _impl;
+    void* _cache;
+    CacheDeleter _cache_deleter;
 
     OpSignature *_opSignature; // 便于追溯
     // 这里要考虑是否让 Layer 持有 Graph
@@ -339,57 +333,6 @@ protected:
     // 保存参数指针以获得理论上的最大化灵活性
     BOOL _ownParams;
     Params *_params;
-};
-
-class LayerSlice {
-public:
-    using ExecFn = void (*)(LayerSlice*, ThreadCtx_t*);
-    using CacheDeleter = void (*)(void*);
-
-    LayerSlice(): _layer(nullptr), _desc() {}
-    LayerSlice(Layer* layer, SliceDesc_t desc)
-        : _layer(layer), _desc(std::move(desc)), _backend(nullptr), _exec(nullptr),
-          _impl(nullptr), _cache(nullptr), _cache_deleter(nullptr) {}
-    ~LayerSlice() {
-        if (nullptr != _cache_deleter && nullptr != _cache) {
-            _cache_deleter(_cache);
-        }
-        _cache = nullptr;
-        _cache_deleter = nullptr;
-    }
-
-    Layer* layer() const { return _layer; }
-    const SliceDesc_t& desc() const { return _desc; }
-    Backend* backend() const { return _backend; }
-    ExecFn exec() const { return _exec; }
-    template <typename T>
-    T* impl() const { return static_cast<T*>(_impl); }
-    template <typename T>
-    T* cache() const { return static_cast<T*>(_cache); }
-    void setBackend(Backend* backend) { _backend = backend; }
-    void setExec(ExecFn exec) { _exec = exec; }
-    void setImpl(void* impl) { _impl = impl; }
-    // prepare 阶段第一次 bind executor 阶段按需调用
-    void setCache(void* cache, CacheDeleter deleter) {
-        if (nullptr != _cache_deleter && nullptr != _cache) {
-            _cache_deleter(_cache);
-        }
-        _cache = cache;
-        _cache_deleter = deleter;
-    }
-    void execute(ThreadCtx_t* ctx) const {
-        EXIT_ERROR_CHECK_EQ(nullptr, _exec, "LayerSlice execute fn is nullptr");
-        _exec(const_cast<LayerSlice*>(this), ctx);
-    }
-
-private:
-    Layer*   _layer;   // 原始 Layer
-    SliceDesc_t _desc;   // 切片描述
-    Backend* _backend;
-    ExecFn _exec;
-    void* _impl;
-    void* _cache;
-    CacheDeleter _cache_deleter;
 };
 
 

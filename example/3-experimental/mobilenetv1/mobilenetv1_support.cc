@@ -161,17 +161,6 @@ const char* exec_domain_name(ExecutionDomain domain) {
     }
 }
 
-const char* exec_unit_type_name(ExecUnitType type) {
-    switch (type) {
-    case ExecUnitType::EU_LAYER:
-        return "layer";
-    case ExecUnitType::EU_PARTITION:
-        return "partition";
-    default:
-        return "unknown";
-    }
-}
-
 void expect_shape(const Value_t& value,
                   std::initializer_list<UINT> dims,
                   const char* name) {
@@ -325,12 +314,11 @@ void print_op_summary(const std::vector<MobileNetOpInfo>& ops) {
 }
 
 void print_partition_summary(const Network& network) {
-    const std::vector<ExecutionPartition>& parts = network.execPartitions();
     const PartitionGraph& part_graph = network.partGraph();
-    const ExecutionPlan& plan = network.execPlan();
+    const std::vector<ExecPartition>& parts = part_graph.parts();
 
     std::cout << "[partition] count: " << parts.size() << std::endl;
-    for (const ExecutionPartition& part : parts) {
+    for (const ExecPartition& part : parts) {
         std::cout << "  part[" << part.id() << "]"
                   << " domain=" << exec_domain_name(part.domain())
                   << " layers=" << part.layers().size()
@@ -346,67 +334,34 @@ void print_partition_summary(const Network& network) {
         std::cout << "  edge " << edge.from << " -> " << edge.to
                   << " values=" << edge.values.size() << std::endl;
     }
-
-    std::cout << "[exec-plan] units: " << plan.size() << std::endl;
-    UINT unit_index = 0;
-    for (const ExecUnit& unit : plan.units()) {
-        const ExecutionPartition *part = unit.part();
-        std::cout << "  unit[" << unit_index++ << "]"
-                  << " type=" << exec_unit_type_name(unit.type())
-                  << " domain=" << exec_domain_name(unit.domain())
-                  << " slices=" << unit.slices().size()
-                  << " inputs=" << unit.inputs().size()
-                  << " outputs=" << unit.outputs().size();
-        if (nullptr != part) {
-            std::cout << " part=" << part->id();
-        }
-        std::cout << std::endl;
-    }
 }
 
 void validate_partition_pipeline(const Network& network) {
-    const std::vector<ExecutionPartition>& parts = network.execPartitions();
     const PartitionGraph& part_graph = network.partGraph();
-    const ExecutionPlan& plan = network.execPlan();
+    const std::vector<ExecPartition>& parts = part_graph.parts();
 
-    EXIT_ERROR_CHECK_EQ(true, parts.empty(), "ExecutionPartition list is empty");
+    EXIT_ERROR_CHECK_EQ(true, parts.empty(), "ExecPartition list is empty");
     EXIT_ERROR_CHECK_NE(part_graph.size(), parts.size(), "PartitionGraph node size mismatch");
-    EXIT_ERROR_CHECK_EQ(true, plan.empty(), "ExecutionPlan is empty");
 
     UINT total_part_layers = 0;
-    for (const ExecutionPartition& part : parts) {
-        EXIT_ERROR_CHECK_EQ(true, part.empty(), "ExecutionPartition must not be empty");
+    for (const ExecPartition& part : parts) {
+        EXIT_ERROR_CHECK_EQ(true, part.empty(), "ExecPartition must not be empty");
         EXIT_ERROR_CHECK_NE(part.topo().size(), part.layers().size(),
-            "ExecutionPartition topo size mismatch");
+            "ExecPartition topo size mismatch");
         total_part_layers += static_cast<UINT>(part.topo().size());
     }
 
-    UINT total_unit_slices = 0;
-    UINT total_tee_units = 0;
-    for (const ExecUnit& unit : plan.units()) {
-        const ExecutionPartition *part = unit.part();
-        EXIT_ERROR_CHECK_EQ(nullptr, part, "ExecUnit partition is nullptr");
-        EXIT_ERROR_CHECK_EQ(true, unit.slices().empty(), "ExecUnit slices must not be empty");
-        total_unit_slices += static_cast<UINT>(unit.slices().size());
-
-        if (ExecutionDomain::ED_CPU_TEE == unit.domain()) {
-            EXIT_ERROR_CHECK_NE(unit.type(), ExecUnitType::EU_PARTITION,
-                "TEE ExecUnit must be partition type");
-            ++total_tee_units;
-        }
-    }
-
     UINT tee_partitions = 0;
-    for (const ExecutionPartition& part : parts) {
+    for (const ExecPartition& part : parts) {
         if (ExecutionDomain::ED_CPU_TEE == part.domain()) {
             ++tee_partitions;
         }
     }
 
-    EXIT_ERROR_CHECK_NE(total_unit_slices, total_part_layers,
-        "ExecutionPlan total slice coverage mismatch");
-    EXIT_ERROR_CHECK_NE(total_tee_units, tee_partitions,
-        "TEE partition count and TEE ExecUnit count mismatch");
+    EXIT_ERROR_CHECK_EQ(true, total_part_layers == 0,
+        "ExecPartition total layer coverage mismatch");
+    EXIT_ERROR_CHECK_EQ(true, tee_partitions == 0,
+        "Expected at least one TEE partition");
 }
 
 } // namespace mobilenetv1_demo

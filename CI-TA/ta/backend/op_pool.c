@@ -11,7 +11,7 @@ static TEE_Result check_pool_io(ta_layer_exec_ctx_t *ctx)
     return TEE_SUCCESS;
 }
 
-static void resolve_pool_padding(const confinfer_pool_attr_t *attr, int32_t *pad_top, int32_t *pad_left)
+static void resolve_pool_padding(const confinfer_model_image_pool_attr_t *attr, int32_t *pad_top, int32_t *pad_left)
 {
     *pad_top = 0;
     *pad_left = 0;
@@ -26,7 +26,7 @@ static void resolve_pool_padding(const confinfer_pool_attr_t *attr, int32_t *pad
 
 TEE_Result ta_execute_maxpool2d_fp32(ta_layer_exec_ctx_t *ctx)
 {
-    const confinfer_pool_attr_t *attr = NULL;
+    const confinfer_model_image_pool_attr_t *attr = NULL;
     ta_value_t *input = NULL;
     ta_value_t *output = NULL;
     float *src = NULL;
@@ -38,7 +38,7 @@ TEE_Result ta_execute_maxpool2d_fp32(ta_layer_exec_ctx_t *ctx)
     if (TEE_SUCCESS != check_pool_io(ctx)) {
         return TEE_ERROR_BAD_PARAMETERS;
     }
-    attr = (const confinfer_pool_attr_t *)ta_backend_attr(ctx, sizeof(*attr));
+    attr = (const confinfer_model_image_pool_attr_t *)ta_backend_attr(ctx, sizeof(*attr));
     input = ta_backend_input(ctx, 0);
     output = ta_backend_output(ctx, 0);
     if (!attr || !input || !output || !input->data.ptr || !output->data.ptr) {
@@ -87,7 +87,7 @@ TEE_Result ta_execute_maxpool2d_fp32(ta_layer_exec_ctx_t *ctx)
 
 TEE_Result ta_execute_avgpool2d_fp32(ta_layer_exec_ctx_t *ctx)
 {
-    const confinfer_pool_attr_t *attr = NULL;
+    const confinfer_model_image_pool_attr_t *attr = NULL;
     ta_value_t *input = NULL;
     ta_value_t *output = NULL;
     float *src = NULL;
@@ -99,7 +99,7 @@ TEE_Result ta_execute_avgpool2d_fp32(ta_layer_exec_ctx_t *ctx)
     if (TEE_SUCCESS != check_pool_io(ctx)) {
         return TEE_ERROR_BAD_PARAMETERS;
     }
-    attr = (const confinfer_pool_attr_t *)ta_backend_attr(ctx, sizeof(*attr));
+    attr = (const confinfer_model_image_pool_attr_t *)ta_backend_attr(ctx, sizeof(*attr));
     input = ta_backend_input(ctx, 0);
     output = ta_backend_output(ctx, 0);
     if (!attr || !input || !output || !input->data.ptr || !output->data.ptr) {
@@ -153,7 +153,7 @@ TEE_Result ta_execute_avgpool2d_fp32(ta_layer_exec_ctx_t *ctx)
 
 TEE_Result ta_execute_adaptive_avgpool2d_fp32(ta_layer_exec_ctx_t *ctx)
 {
-    const confinfer_adaptive_pool_attr_t *attr = NULL;
+    const confinfer_model_image_adaptive_pool_attr_t *attr = NULL;
     ta_value_t *input = NULL;
     ta_value_t *output = NULL;
     float *src = NULL;
@@ -163,7 +163,7 @@ TEE_Result ta_execute_adaptive_avgpool2d_fp32(ta_layer_exec_ctx_t *ctx)
     if (TEE_SUCCESS != check_pool_io(ctx)) {
         return TEE_ERROR_BAD_PARAMETERS;
     }
-    attr = (const confinfer_adaptive_pool_attr_t *)ta_backend_attr(ctx, sizeof(*attr));
+    attr = (const confinfer_model_image_adaptive_pool_attr_t *)ta_backend_attr(ctx, sizeof(*attr));
     input = ta_backend_input(ctx, 0);
     output = ta_backend_output(ctx, 0);
     if (!attr || !input || !output || !input->data.ptr || !output->data.ptr) {
@@ -210,7 +210,7 @@ TEE_Result ta_execute_adaptive_avgpool2d_fp32(ta_layer_exec_ctx_t *ctx)
 
 TEE_Result ta_execute_adaptive_maxpool2d_fp32(ta_layer_exec_ctx_t *ctx)
 {
-    const confinfer_adaptive_pool_attr_t *attr = NULL;
+    const confinfer_model_image_adaptive_pool_attr_t *attr = NULL;
     ta_value_t *input = NULL;
     ta_value_t *output = NULL;
     float *src = NULL;
@@ -220,7 +220,7 @@ TEE_Result ta_execute_adaptive_maxpool2d_fp32(ta_layer_exec_ctx_t *ctx)
     if (TEE_SUCCESS != check_pool_io(ctx)) {
         return TEE_ERROR_BAD_PARAMETERS;
     }
-    attr = (const confinfer_adaptive_pool_attr_t *)ta_backend_attr(ctx, sizeof(*attr));
+    attr = (const confinfer_model_image_adaptive_pool_attr_t *)ta_backend_attr(ctx, sizeof(*attr));
     input = ta_backend_input(ctx, 0);
     output = ta_backend_output(ctx, 0);
     if (!attr || !input || !output || !input->data.ptr || !output->data.ptr) {

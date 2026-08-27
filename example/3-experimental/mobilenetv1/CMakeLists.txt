@@ -15,12 +15,14 @@ file(GLOB MAIN_SOURCES_C
 add_executable(${PROJECT_NAME} ${MAIN_SOURCES_CPP} ${MAIN_SOURCES_C})
 
 set(KERNEL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../CI-CA")
-set(CONFINFER_LIB_DIR "${KERNEL_DIR}/build" CACHE PATH "Directory containing libConfInfer")
+set(CONFINFER_TA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../CI-TA")
+set(CONFINFER_LIB_DIR "${KERNEL_DIR}/build_x86" CACHE PATH "Directory containing libConfInfer")
 
 target_include_directories(${PROJECT_NAME}
                 PUBLIC ${KERNEL_DIR}/include
                 PUBLIC ${KERNEL_DIR}/include/Kernel
                 PUBLIC ${KERNEL_DIR}/include/Kernel/core/ops
+                PUBLIC ${CONFINFER_TA_DIR}/ta/include
                 PUBLIC ${KERNEL_DIR}/../../log4cpp/build_aarch64/include
                 PUBLIC ${KERNEL_DIR}/../../log4cpp/build_aarch64/include/threading
                 PUBLIC ${KERNEL_DIR}/../../log4cpp/build/include

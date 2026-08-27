@@ -15,12 +15,12 @@ namespace cpu_ref {
 namespace {
 
 template <typename LayerT>
-LayerT* checked_layer(core::LayerSlice* ls, const char* name) {
-    EXIT_ERROR_CHECK_EQ(nullptr, ls, "LayerSlice is nullptr");
-    auto* layer = dynamic_cast<LayerT*>(ls->layer());
-    EXIT_ERROR_CHECK_EQ(nullptr, layer, "%s layer type mismatch", name);
-    ls->setImpl(layer);
-    return layer;
+LayerT* checked_layer(core::Layer* layer, const char* name) {
+    EXIT_ERROR_CHECK_EQ(nullptr, layer, "Layer is nullptr");
+    auto* typed = dynamic_cast<LayerT*>(layer);
+    EXIT_ERROR_CHECK_EQ(nullptr, typed, "%s layer type mismatch", name);
+    layer->setImpl(typed);
+    return typed;
 }
 
 template <typename PlanT>
@@ -92,32 +92,32 @@ void require_ready_output(const core::Value_t& value, const char* name) {
 
 } // namespace
 
-void prepare_graph_input(core::LayerSlice *ls) {
-    EXIT_ERROR_CHECK_EQ(nullptr, ls, "LayerSlice is nullptr");
+void prepare_graph_input(core::Layer *layer) {
+    EXIT_ERROR_CHECK_EQ(nullptr, layer, "Layer is nullptr");
 }
 
-void prepare_graph_output(core::LayerSlice *ls) {
-    EXIT_ERROR_CHECK_EQ(nullptr, ls, "LayerSlice is nullptr");
+void prepare_graph_output(core::Layer *layer) {
+    EXIT_ERROR_CHECK_EQ(nullptr, layer, "Layer is nullptr");
 }
 
-void execute_graph_input(core::LayerSlice *ls, ThreadCtx_t *ctx) {
-    (void)ls;
+void execute_graph_input(core::Layer *layer, core::ExecContext_t *ctx) {
+    (void)layer;
     (void)ctx;
 }
 
-void execute_graph_output(core::LayerSlice *ls, ThreadCtx_t *ctx) {
-    (void)ls;
+void execute_graph_output(core::Layer *layer, core::ExecContext_t *ctx) {
+    (void)layer;
     (void)ctx;
 }
 
-void prepare_relu(core::LayerSlice *ls) {
-    auto* relu = checked_layer<core::UnaryOp_L>(ls, "ReLU");
+void prepare_relu(core::Layer *layer) {
+    auto* relu = checked_layer<core::UnaryOp_L>(layer, "ReLU");
     require_ready_output(relu->output(), "ReLU output");
 }
 
-void execute_relu(core::LayerSlice *ls, ThreadCtx_t *ctx) {
+void execute_relu(core::Layer *layer, core::ExecContext_t *ctx) {
     (void)ctx;
-    auto* relu = ls->impl<core::UnaryOp_L>();
+    auto* relu = layer->impl<core::UnaryOp_L>();
     core::Value_t& input = relu->input(0);
     core::Value_t& output = relu->output();
     require_runtime_input(input, "ReLU input");
@@ -126,14 +126,14 @@ void execute_relu(core::LayerSlice *ls, ThreadCtx_t *ctx) {
                   input.data.shape.size);
 }
 
-void prepare_dropout(core::LayerSlice *ls) {
-    auto* dropout = checked_layer<core::UnaryOp_L>(ls, "Dropout");
+void prepare_dropout(core::Layer *layer) {
+    auto* dropout = checked_layer<core::UnaryOp_L>(layer, "Dropout");
     require_ready_output(dropout->output(), "Dropout output");
 }
 
-void execute_dropout(core::LayerSlice *ls, ThreadCtx_t *ctx) {
+void execute_dropout(core::Layer *layer, core::ExecContext_t *ctx) {
     (void)ctx;
-    auto* dropout = ls->impl<core::UnaryOp_L>();
+    auto* dropout = layer->impl<core::UnaryOp_L>();
     core::Value_t& input = dropout->input(0);
     core::Value_t& output = dropout->output();
     require_runtime_input(input, "Dropout input");
@@ -141,14 +141,14 @@ void execute_dropout(core::LayerSlice *ls, ThreadCtx_t *ctx) {
                    input.data.shape.size * input.data.getTypeSize());
 }
 
-void prepare_flatten(core::LayerSlice *ls) {
-    auto* flatten = checked_layer<core::Flatten_L>(ls, "Flatten");
+void prepare_flatten(core::Layer *layer) {
+    auto* flatten = checked_layer<core::Flatten_L>(layer, "Flatten");
     require_ready_output(flatten->output(), "Flatten output");
 }
 
-void execute_flatten(core::LayerSlice *ls, ThreadCtx_t *ctx) {
+void execute_flatten(core::Layer *layer, core::ExecContext_t *ctx) {
     (void)ctx;
-    auto* flatten = ls->impl<core::Flatten_L>();
+    auto* flatten = layer->impl<core::Flatten_L>();
     core::Value_t& input = flatten->input(0);
     core::Value_t& output = flatten->output();
     require_runtime_input(input, "Flatten input");
@@ -156,8 +156,8 @@ void execute_flatten(core::LayerSlice *ls, ThreadCtx_t *ctx) {
                    input.data.shape.size * input.data.getTypeSize());
 }
 
-void prepare_linear(core::LayerSlice *ls) {
-    auto* linear = checked_layer<core::Linear_L>(ls, "Linear");
+void prepare_linear(core::Layer *layer) {
+    auto* linear = checked_layer<core::Linear_L>(layer, "Linear");
     core::Value_t& input = linear->input(0);
     core::Value_t& output = linear->output();
     const core::Data_t* weight = linear->param(core::ParamRole::WEIGHT);
@@ -179,13 +179,13 @@ void prepare_linear(core::LayerSlice *ls) {
     plan->out_features = linear->outFeatures();
     plan->outer = input.data.shape.size / plan->in_features;
     plan->bias_enabled = linear->biasEnabled();
-    ls->setCache(plan, delete_plan<LinearPlan>);
+    layer->setCache(plan, delete_plan<LinearPlan>);
 }
 
-void execute_linear(core::LayerSlice *ls, ThreadCtx_t *ctx) {
+void execute_linear(core::Layer *layer, core::ExecContext_t *ctx) {
     (void)ctx;
-    auto* linear = ls->impl<core::Linear_L>();
-    auto* plan = ls->cache<LinearPlan>();
+    auto* linear = layer->impl<core::Linear_L>();
+    auto* plan = layer->cache<LinearPlan>();
     core::Value_t& input = linear->input(0);
     core::Value_t& output = linear->output();
     require_runtime_input(input, "Linear input");
@@ -200,8 +200,8 @@ void execute_linear(core::LayerSlice *ls, ThreadCtx_t *ctx) {
                     static_cast<ref_bool_t>(plan->bias_enabled));
 }
 
-void prepare_conv2d(core::LayerSlice *ls) {
-    auto* conv = checked_layer<core::ConvNd_L>(ls, "Conv2d");
+void prepare_conv2d(core::Layer *layer) {
+    auto* conv = checked_layer<core::ConvNd_L>(layer, "Conv2d");
     core::Value_t& input = conv->input(0);
     core::Value_t& output = conv->output();
     const core::Data_t* weight = conv->param(core::ParamRole::WEIGHT);
@@ -245,13 +245,13 @@ void prepare_conv2d(core::LayerSlice *ls) {
         plan->pad_l = conv->padding()[2];
     }
     plan->bias_enabled = conv->biasEnabled();
-    ls->setCache(plan, delete_plan<Conv2dPlan>);
+    layer->setCache(plan, delete_plan<Conv2dPlan>);
 }
 
-void execute_conv2d(core::LayerSlice *ls, ThreadCtx_t *ctx) {
+void execute_conv2d(core::Layer *layer, core::ExecContext_t *ctx) {
     (void)ctx;
-    auto* conv = ls->impl<core::ConvNd_L>();
-    auto* plan = ls->cache<Conv2dPlan>();
+    auto* conv = layer->impl<core::ConvNd_L>();
+    auto* plan = layer->cache<Conv2dPlan>();
     core::Value_t& input = conv->input(0);
     core::Value_t& output = conv->output();
     require_runtime_input(input, "Conv2d input");
@@ -268,8 +268,8 @@ void execute_conv2d(core::LayerSlice *ls, ThreadCtx_t *ctx) {
                          static_cast<ref_bool_t>(plan->bias_enabled));
 }
 
-void prepare_adaptiveavgpool2d(core::LayerSlice *ls) {
-    auto* pool = checked_layer<core::AdaptivePool2d_L>(ls, "AdaptiveAvgPool2d");
+void prepare_adaptiveavgpool2d(core::Layer *layer) {
+    auto* pool = checked_layer<core::AdaptivePool2d_L>(layer, "AdaptiveAvgPool2d");
     core::Value_t& input = pool->input(0);
     core::Value_t& output = pool->output(core::OutputKind::Default);
     require_ready_output(output, "AdaptiveAvgPool2d output");
@@ -283,13 +283,13 @@ void prepare_adaptiveavgpool2d(core::LayerSlice *ls) {
     plan->in_w = input.data.shape.dims[3];
     plan->out_h = output.data.shape.dims[2];
     plan->out_w = output.data.shape.dims[3];
-    ls->setCache(plan, delete_plan<AdaptiveAvgPool2dPlan>);
+    layer->setCache(plan, delete_plan<AdaptiveAvgPool2dPlan>);
 }
 
-void execute_adaptiveavgpool2d(core::LayerSlice *ls, ThreadCtx_t *ctx) {
+void execute_adaptiveavgpool2d(core::Layer *layer, core::ExecContext_t *ctx) {
     (void)ctx;
-    auto* pool = ls->impl<core::AdaptivePool2d_L>();
-    auto* plan = ls->cache<AdaptiveAvgPool2dPlan>();
+    auto* pool = layer->impl<core::AdaptivePool2d_L>();
+    auto* plan = layer->cache<AdaptiveAvgPool2dPlan>();
     core::Value_t& input = pool->input(0);
     core::Value_t& output = pool->output(core::OutputKind::Default);
     require_runtime_input(input, "AdaptiveAvgPool2d input");
@@ -301,8 +301,8 @@ void execute_adaptiveavgpool2d(core::LayerSlice *ls, ThreadCtx_t *ctx) {
                                plan->out_h, plan->out_w);
 }
 
-void prepare_batchnorm2d(core::LayerSlice *ls) {
-    auto* bn = checked_layer<core::BatchNorm2d_L>(ls, "BatchNorm2d");
+void prepare_batchnorm2d(core::Layer *layer) {
+    auto* bn = checked_layer<core::BatchNorm2d_L>(layer, "BatchNorm2d");
     core::Value_t& input = bn->input(0);
     core::Value_t& output = bn->output();
     require_ready_output(output, "BatchNorm2d output");
@@ -323,13 +323,13 @@ void prepare_batchnorm2d(core::LayerSlice *ls) {
     plan->spatial = input.data.shape.dims[2] * input.data.shape.dims[3];
     plan->eps = bn->eps();
     plan->track_running_stats = bn->trackRunningStats();
-    ls->setCache(plan, delete_plan<BatchNorm2dPlan>);
+    layer->setCache(plan, delete_plan<BatchNorm2dPlan>);
 }
 
-void execute_batchnorm2d(core::LayerSlice *ls, ThreadCtx_t *ctx) {
+void execute_batchnorm2d(core::Layer *layer, core::ExecContext_t *ctx) {
     (void)ctx;
-    auto* bn = ls->impl<core::BatchNorm2d_L>();
-    auto* plan = ls->cache<BatchNorm2dPlan>();
+    auto* bn = layer->impl<core::BatchNorm2d_L>();
+    auto* plan = layer->cache<BatchNorm2dPlan>();
     core::Value_t& input = bn->input(0);
     core::Value_t& output = bn->output();
     require_runtime_input(input, "BatchNorm2d input");

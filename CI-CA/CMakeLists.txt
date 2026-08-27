@@ -64,6 +64,7 @@ set(CMAKE_CXX_STANDARD 20)
 # cmake -DLOGCPP_EXT=1 -DCMAKE_PREFIX_PATH="$(python -c 'import torch.utils; print(torch.utils.cmake_prefix_path)')" ..
 # cmake -DLOGCPP_EXT=1 -DRELEASE=0 -DENABLE_TEE_BRIDGE=1 ..
 # cmake -DLOGCPP_EXT=1 -DRELEASE=0 -DENABLE_TEE_BRIDGE=1 -DTRUSTSPAN=1 ..
+# cmake -DLOGCPP_EXT=0 -DRELEASE=0 -DENABLE_TEE_BRIDGE=1 -DTRUSTSPAN=0 ..
 
 if(NOT DEFINED LOGCPP_EXT)
     set(LOGCPP_EXT 0 CACHE STRING "value of LOGCPP_EXT")
@@ -88,6 +89,13 @@ message(STATUS "CMAKE_C_COMPILER = ${CMAKE_C_COMPILER}")
 message(STATUS "CMAKE_CXX_COMPILER = ${CMAKE_CXX_COMPILER}")
 message(STATUS "CMAKE_SYSROOT = ${CMAKE_SYSROOT}")
 message(STATUS "TRUSTSPAN = ${TRUSTSPAN}")
+if(ENABLE_TEE_BRIDGE EQUAL 1 AND TRUSTSPAN EQUAL 1)
+    message(STATUS "TEE bridge variant = TrustSpan")
+elseif(ENABLE_TEE_BRIDGE EQUAL 1)
+    message(STATUS "TEE bridge variant = Default TEE")
+else()
+    message(STATUS "TEE bridge variant = Disabled")
+endif()
 
 set(CONFINFER_IS_AARCH64_BUILD FALSE)
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|AARCH64|arm64|ARM64)$")
@@ -114,8 +122,11 @@ endif()
 file(GLOB MAIN_SOURCES_CPP CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/core/*.cc"
     "${CMAKE_CURRENT_SOURCE_DIR}/core/ops/*.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/image/*.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/protocol/*.cc"
     "${CMAKE_CURRENT_SOURCE_DIR}/backend/*.cc"
     "${CMAKE_CURRENT_SOURCE_DIR}/backend/cpu_ree/*.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/backend/cpu_tee/*.cc"
     "${CMAKE_CURRENT_SOURCE_DIR}/backend/cpu_ree/math/*.cc"
     "${CMAKE_CURRENT_SOURCE_DIR}/backend/cpu_ree_ref/*.cc"
     "${CMAKE_CURRENT_SOURCE_DIR}/Logger/*.cc"
@@ -127,9 +138,21 @@ file(GLOB MAIN_SOURCES_C CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/backend/cpu_ree_ref/*.c")
 
 if(ENABLE_TEE_BRIDGE EQUAL 1)
-    file(GLOB TEE_BRIDGE_SOURCES_CPP CONFIGURE_DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/bridges/*.cc")
-    list(APPEND MAIN_SOURCES_CPP ${TEE_BRIDGE_SOURCES_CPP})
+    set(CONFINFER_CI_TA_DIR
+        "${CMAKE_CURRENT_SOURCE_DIR}/../CI-TA")
+    set(CONFINFER_CI_TA_SYNC_SCRIPT
+        "${CONFINFER_CI_TA_DIR}/scripts/sync_to_optee_examples.sh")
+    set(CONFINFER_CI_TA_HOSTLIB_SCRIPT
+        "${CONFINFER_CI_TA_DIR}/scripts/build_hostlib.sh")
+
+    add_custom_target(confinfer_tee_bridge_prepare
+        COMMAND bash "${CONFINFER_CI_TA_SYNC_SCRIPT}"
+        COMMAND bash "${CONFINFER_CI_TA_HOSTLIB_SCRIPT}"
+        WORKING_DIRECTORY "${CONFINFER_CI_TA_DIR}"
+        COMMENT "Syncing CI-TA sources and building libconfinfer_host.a for TEE bridge")
+
+    list(APPEND MAIN_SOURCES_CPP
+        "${CMAKE_CURRENT_SOURCE_DIR}/protocol/bridges/ExecBridge_TEE.cc")
     list(APPEND MAIN_SOURCES_C
         "${CMAKE_CURRENT_SOURCE_DIR}/../CI-TA/host/confinfer_host.c")
 endif()
@@ -140,6 +163,10 @@ message(STATUS "MAIN_SOURCES_C = ${MAIN_SOURCES_C}")
 add_library(${PROJECT_NAME} SHARED 
             ${MAIN_SOURCES_CPP}
             ${MAIN_SOURCES_C})
+
+if(ENABLE_TEE_BRIDGE EQUAL 1)
+    add_dependencies(${PROJECT_NAME} confinfer_tee_bridge_prepare)
+endif()
 
 target_include_directories(${PROJECT_NAME}
                 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include

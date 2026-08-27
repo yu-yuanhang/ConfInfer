@@ -5,7 +5,7 @@
 
 TEE_Result ta_execute_add_fp32(ta_layer_exec_ctx_t *ctx)
 {
-    const confinfer_add_attr_t *attr = NULL;
+    const confinfer_model_image_add_attr_t *attr = NULL;
     ta_value_t *lhs = NULL;
     ta_value_t *rhs = NULL;
     ta_value_t *output = NULL;
@@ -18,7 +18,7 @@ TEE_Result ta_execute_add_fp32(ta_layer_exec_ctx_t *ctx)
         return TEE_ERROR_BAD_PARAMETERS;
     }
 
-    attr = (const confinfer_add_attr_t *)ta_backend_attr(ctx, sizeof(*attr));
+    attr = (const confinfer_model_image_add_attr_t *)ta_backend_attr(ctx, sizeof(*attr));
     lhs = ta_backend_input(ctx, 0);
     rhs = ta_backend_input(ctx, 1);
     output = ta_backend_output(ctx, 0);
@@ -158,7 +158,7 @@ TEE_Result ta_execute_mul_fp32(ta_layer_exec_ctx_t *ctx)
 
 TEE_Result ta_execute_bias_add_fp32(ta_layer_exec_ctx_t *ctx)
 {
-    const confinfer_bias_add_attr_t *attr = NULL;
+    const confinfer_model_image_bias_add_attr_t *attr = NULL;
     ta_value_t *input = NULL;
     ta_value_t *output = NULL;
     ta_param_t *bias = NULL;
@@ -177,7 +177,7 @@ TEE_Result ta_execute_bias_add_fp32(ta_layer_exec_ctx_t *ctx)
         return TEE_ERROR_BAD_PARAMETERS;
     }
 
-    attr = (const confinfer_bias_add_attr_t *)ta_backend_attr(ctx, sizeof(*attr));
+    attr = (const confinfer_model_image_bias_add_attr_t *)ta_backend_attr(ctx, sizeof(*attr));
     input = ta_backend_input(ctx, 0);
     output = ta_backend_output(ctx, 0);
     bias = ta_backend_param_by_role(ctx, CONFINFER_PARAM_ROLE_BIAS);
@@ -229,7 +229,7 @@ TEE_Result ta_execute_bias_add_fp32(ta_layer_exec_ctx_t *ctx)
 
 TEE_Result ta_execute_concat_fp32(ta_layer_exec_ctx_t *ctx)
 {
-    const confinfer_axis_attr_t *attr = NULL;
+    const confinfer_model_image_axis_attr_t *attr = NULL;
     ta_value_t *output = NULL;
     float *dst = NULL;
     int32_t axis = 0;
@@ -247,7 +247,7 @@ TEE_Result ta_execute_concat_fp32(ta_layer_exec_ctx_t *ctx)
         return TEE_ERROR_BAD_PARAMETERS;
     }
 
-    attr = (const confinfer_axis_attr_t *)ta_backend_attr(ctx, sizeof(*attr));
+    attr = (const confinfer_model_image_axis_attr_t *)ta_backend_attr(ctx, sizeof(*attr));
     output = ta_backend_output(ctx, 0);
     if (!attr || !output || !output->data.ptr || output->data.dtype != CONFINFER_DTYPE_FP32 ||
         output->data.shape.ndim == 0) {

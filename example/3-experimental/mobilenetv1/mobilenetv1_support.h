@@ -31,10 +31,9 @@ struct MobileNetRunOptions {
 MobileNetRunOptions parse_options(int argc, char* argv[]);
 
 // 名称格式化:
-// 用于把 backend / execution domain / exec unit 类型转成便于打印的字符串。
+// 用于把 backend / execution domain 转成便于打印的字符串。
 const char* backend_kind_name(Kernel::backend::BackendKind kind);
 const char* exec_domain_name(Kernel::core::ExecutionDomain domain);
-const char* exec_unit_type_name(Kernel::core::ExecUnitType type);
 
 // 张量辅助:
 // 这些函数服务于 demo 内部的输入填充、shape 检查和简单结果判定，
@@ -63,9 +62,9 @@ Kernel::core::ParamLoadReport load_model_params_or_die(
     const std::string& manifest_path,
     const Kernel::core::ParamBindingTable& bindings);
 
-// 分区 / 执行计划观测:
+// 分区观测:
 // 用于打印和验证 network.prepare() 之后生成的
-// ExecutionPartition / PartitionGraph / ExecutionPlan。
+// ExecPartition / PartitionGraph。
 void print_op_summary(const std::vector<MobileNetOpInfo>& ops);
 void print_partition_summary(const Kernel::core::Network& network);
 void validate_partition_pipeline(const Kernel::core::Network& network);

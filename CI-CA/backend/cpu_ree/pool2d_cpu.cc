@@ -166,20 +166,20 @@ void parse_padding(const std::vector<INT>& padding,
     pad_r = padding[3];
 }
 
-core::PoolNd_L* checked_pool2d(core::LayerSlice* ls) {
-    EXIT_ERROR_CHECK_EQ(nullptr, ls, "LayerSlice is nullptr");
-    auto* pool = dynamic_cast<core::PoolNd_L*>(ls->layer());
+core::PoolNd_L* checked_pool2d(core::Layer* layer) {
+    EXIT_ERROR_CHECK_EQ(nullptr, layer, "Layer is nullptr");
+    auto* pool = dynamic_cast<core::PoolNd_L*>(layer);
     EXIT_ERROR_CHECK_EQ(nullptr, pool, "Layer is not PoolNd_L");
     EXIT_ERROR_CHECK_NE(2, pool->spatialDim(), "Pool layer spatial dim must be 2");
-    ls->setImpl(pool);
+    layer->setImpl(pool);
     return pool;
 }
 
-core::AdaptivePool2d_L* checked_adaptive_pool2d(core::LayerSlice* ls) {
-    EXIT_ERROR_CHECK_EQ(nullptr, ls, "LayerSlice is nullptr");
-    auto* pool = dynamic_cast<core::AdaptivePool2d_L*>(ls->layer());
+core::AdaptivePool2d_L* checked_adaptive_pool2d(core::Layer* layer) {
+    EXIT_ERROR_CHECK_EQ(nullptr, layer, "Layer is nullptr");
+    auto* pool = dynamic_cast<core::AdaptivePool2d_L*>(layer);
     EXIT_ERROR_CHECK_EQ(nullptr, pool, "Layer is not AdaptivePool2d_L");
-    ls->setImpl(pool);
+    layer->setImpl(pool);
     return pool;
 }
 
@@ -544,8 +544,8 @@ void execute_avgpool2d_global(core::PoolNd_L* pool) {
 
 } // namespace
 
-void prepare_maxpool2d(core::LayerSlice *ls) {
-    auto* pool = checked_pool2d(ls);
+void prepare_maxpool2d(core::Layer *layer) {
+    auto* pool = checked_pool2d(layer);
     core::Value_t& input = pool->input(0);
     core::Value_t& output = pool->output(core::OutputKind::Default);
     validate_pool_io(input, output);
@@ -555,63 +555,63 @@ void prepare_maxpool2d(core::LayerSlice *ls) {
             "MaxPool2d indices only support INT32 output");
         EXIT_ERROR_CHECK_EQ(nullptr, indices.data.ptr, "MaxPool2d indices ptr is nullptr");
     }
-    ls->setCache(build_pool2d_plan(pool), delete_pool2d_plan);
+    layer->setCache(build_pool2d_plan(pool), delete_pool2d_plan);
 }
 
-void execute_maxpool2d(core::LayerSlice *ls, ThreadCtx_t *ctx) {
+void execute_maxpool2d(core::Layer *layer, core::ExecContext_t *ctx) {
     (void)ctx;
-    auto* plan = ls->cache<Pool2dPlan>();
+    auto* plan = layer->cache<Pool2dPlan>();
     EXIT_ERROR_CHECK_EQ(nullptr, plan, "MaxPool2d plan is nullptr");
     switch (plan->fast_kind) {
         case Pool2dFastKind::MAXPOOL_2X2_S2:
-            execute_maxpool2d_fast_2x2s2(ls->impl<core::PoolNd_L>());
+            execute_maxpool2d_fast_2x2s2(layer->impl<core::PoolNd_L>());
             return;
         case Pool2dFastKind::MAXPOOL_GLOBAL:
-            execute_maxpool2d_global(ls->impl<core::PoolNd_L>());
+            execute_maxpool2d_global(layer->impl<core::PoolNd_L>());
             return;
         default:
-            execute_maxpool2d_impl(ls->impl<core::PoolNd_L>());
+            execute_maxpool2d_impl(layer->impl<core::PoolNd_L>());
             return;
     }
 }
 
-void prepare_avgpool2d(core::LayerSlice *ls) {
-    auto* pool = checked_pool2d(ls);
+void prepare_avgpool2d(core::Layer *layer) {
+    auto* pool = checked_pool2d(layer);
     validate_pool_io(pool->input(0), pool->output());
-    ls->setCache(build_pool2d_plan(pool), delete_pool2d_plan);
+    layer->setCache(build_pool2d_plan(pool), delete_pool2d_plan);
 }
 
-void execute_avgpool2d(core::LayerSlice *ls, ThreadCtx_t *ctx) {
+void execute_avgpool2d(core::Layer *layer, core::ExecContext_t *ctx) {
     (void)ctx;
-    auto* plan = ls->cache<Pool2dPlan>();
+    auto* plan = layer->cache<Pool2dPlan>();
     EXIT_ERROR_CHECK_EQ(nullptr, plan, "AvgPool2d plan is nullptr");
     switch (plan->fast_kind) {
         case Pool2dFastKind::AVGPOOL_2X2_S2:
-            execute_avgpool2d_fast_2x2s2(ls->impl<core::PoolNd_L>());
+            execute_avgpool2d_fast_2x2s2(layer->impl<core::PoolNd_L>());
             return;
         case Pool2dFastKind::AVGPOOL_GLOBAL:
-            execute_avgpool2d_global(ls->impl<core::PoolNd_L>());
+            execute_avgpool2d_global(layer->impl<core::PoolNd_L>());
             return;
         default:
-            execute_avgpool2d_impl(ls->impl<core::PoolNd_L>());
+            execute_avgpool2d_impl(layer->impl<core::PoolNd_L>());
             return;
     }
 }
 
-void prepare_adaptiveavgpool2d(core::LayerSlice *ls) {
-    auto* pool = checked_adaptive_pool2d(ls);
+void prepare_adaptiveavgpool2d(core::Layer *layer) {
+    auto* pool = checked_adaptive_pool2d(layer);
     core::Value_t& input = pool->input(0);
     core::Value_t& output = pool->output();
     validate_pool_io(input, output);
     // build_adaptive_pool_plan(input, output) 这里直接初始化 cache
     // 下面的实现方式 就一般保持一致
-    ls->setCache(build_adaptive_pool_plan(input, output), delete_adaptive_pool_plan);
+    layer->setCache(build_adaptive_pool_plan(input, output), delete_adaptive_pool_plan);
 }
 
-void execute_adaptiveavgpool2d(core::LayerSlice *ls, ThreadCtx_t *ctx) {
+void execute_adaptiveavgpool2d(core::Layer *layer, core::ExecContext_t *ctx) {
     (void)ctx;
-    auto* pool = ls->impl<core::AdaptivePool2d_L>();
-    auto* plan = ls->cache<AdaptivePoolPlan>();
+    auto* pool = layer->impl<core::AdaptivePool2d_L>();
+    auto* plan = layer->cache<AdaptivePoolPlan>();
     core::Value_t& input = pool->input(0);
     core::Value_t& output = pool->output();
     EXIT_ERROR_CHECK_EQ(nullptr, plan, "AdaptiveAvgPool2d plan is nullptr");
@@ -630,8 +630,8 @@ void execute_adaptiveavgpool2d(core::LayerSlice *ls, ThreadCtx_t *ctx) {
                                   plan->w_ends.data());
 }
 
-void prepare_adaptivemaxpool2d(core::LayerSlice *ls) {
-    auto* pool = checked_adaptive_pool2d(ls);
+void prepare_adaptivemaxpool2d(core::Layer *layer) {
+    auto* pool = checked_adaptive_pool2d(layer);
     core::Value_t& input = pool->input(0);
     core::Value_t& output = pool->output(core::OutputKind::Default);
     validate_pool_io(input, output);
@@ -641,13 +641,13 @@ void prepare_adaptivemaxpool2d(core::LayerSlice *ls) {
             "AdaptiveMaxPool2d indices only support INT32 output");
         EXIT_ERROR_CHECK_EQ(nullptr, indices.data.ptr, "AdaptiveMaxPool2d indices ptr is nullptr");
     }
-    ls->setCache(build_adaptive_pool_plan(input, output), delete_adaptive_pool_plan);
+    layer->setCache(build_adaptive_pool_plan(input, output), delete_adaptive_pool_plan);
 }
 
-void execute_adaptivemaxpool2d(core::LayerSlice *ls, ThreadCtx_t *ctx) {
+void execute_adaptivemaxpool2d(core::Layer *layer, core::ExecContext_t *ctx) {
     (void)ctx;
-    auto* pool = ls->impl<core::AdaptivePool2d_L>();
-    auto* plan = ls->cache<AdaptivePoolPlan>();
+    auto* pool = layer->impl<core::AdaptivePool2d_L>();
+    auto* plan = layer->cache<AdaptivePoolPlan>();
     core::Value_t& input = pool->input(0);
     core::Value_t& output = pool->output(core::OutputKind::Default);
     EXIT_ERROR_CHECK_EQ(nullptr, plan, "AdaptiveMaxPool2d plan is nullptr");

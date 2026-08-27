@@ -98,11 +98,11 @@ Conv2dPlan* build_conv2d_plan(core::ConvNd_L* conv) {
 }
 } // namespace
 
-void prepare_conv2d(core::LayerSlice *ls) {
-    EXIT_ERROR_CHECK_EQ(nullptr, ls, "LayerSlice is nullptr");
-    auto* conv = dynamic_cast<core::ConvNd_L*>(ls->layer());
+void prepare_conv2d(core::Layer *layer) {
+    EXIT_ERROR_CHECK_EQ(nullptr, layer, "Layer is nullptr");
+    auto* conv = dynamic_cast<core::ConvNd_L*>(layer);
     EXIT_ERROR_CHECK_EQ(nullptr, conv, "Layer is not ConvNd_L");
-    ls->setImpl(conv);
+    layer->setImpl(conv);
 
     core::Value_t& input = conv->input(0);
     core::Value_t& output = conv->output();
@@ -123,12 +123,12 @@ void prepare_conv2d(core::LayerSlice *ls) {
         EXIT_ERROR_CHECK_EQ(nullptr, bias, "Conv2d bias is nullptr");
         EXIT_ERROR_CHECK_EQ(nullptr, bias->ptr, "Conv2d bias ptr is nullptr");
     }
-    ls->setCache(build_conv2d_plan(conv), delete_conv2d_plan);
+    layer->setCache(build_conv2d_plan(conv), delete_conv2d_plan);
 }
 
-void execute_conv2d(core::LayerSlice *ls, ThreadCtx_t *ctx) {
-    auto* conv = ls->impl<core::ConvNd_L>();
-    auto* plan = ls->cache<Conv2dPlan>();
+void execute_conv2d(core::Layer *layer, core::ExecContext_t *ctx) {
+    auto* conv = layer->impl<core::ConvNd_L>();
+    auto* plan = layer->cache<Conv2dPlan>();
     EXIT_ERROR_CHECK_EQ(nullptr, plan, "Conv2d plan is nullptr");
 
     core::Value_t& input = conv->input(0);
@@ -137,7 +137,7 @@ void execute_conv2d(core::LayerSlice *ls, ThreadCtx_t *ctx) {
 
     const FLOAT* in_ptr = static_cast<const FLOAT*>(input.data.ptr);
     FLOAT* out_ptr = static_cast<FLOAT*>(output.data.ptr);
-    FLOAT* col_buf = static_cast<FLOAT*>(require_workspace(ls, ctx, plan->workspace_bytes));
+    FLOAT* col_buf = static_cast<FLOAT*>(require_workspace(layer, ctx, plan->workspace_bytes));
 
     for (UINT n = 0; n < plan->batch; ++n) {
         const FLOAT* batch_input = in_ptr + n * plan->input_batch_stride;

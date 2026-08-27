@@ -16,7 +16,6 @@ static void print_shape_line(const char* name, const Kernel::core::DataShape_t& 
 int main() {
     using namespace Kernel::core;
 
-    RUNTIME->setThreadsNum(1);
 
     Value_t graph_input({2, 3, 4, 4});
 
@@ -32,7 +31,7 @@ int main() {
         { GraphInputSlot("input", graph_input) },
         { GraphOutputSlot("output", l3.output()) }
     );
-    Network network(graph, RUNTIME);
+    Network network(graph);
 
     Value_t runtime_input({2, 3, 4, 4});
     runtime_input.alloc();

@@ -16,7 +16,7 @@ public:
               { Kernel::core::GraphInputSlot("input", model.graph_input()) },
               { Kernel::core::GraphOutputSlot("output", model.output_layer().output()) }
           ),
-          network(graph, Kernel::core::RUNTIME) {}
+          network(graph) {}
 
     MobileNetV1Model model;
     Kernel::core::ParamBindingTable bindings;

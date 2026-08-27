@@ -50,7 +50,7 @@ void test_relu_sigmoid_dropout() {
         { GraphInputSlot("input", graph_input) },
         { GraphOutputSlot("output", l3.output()) }
     );
-    Network net(graph, RUNTIME);
+    Network net(graph);
     net.prepare();
 
     Value_t runtime_input({2, 3});
@@ -76,7 +76,7 @@ void test_add() {
         { GraphInputSlot("lhs", lhs_input), GraphInputSlot("rhs", rhs_input) },
         { GraphOutputSlot("output", out.output()) }
     );
-    Network net(graph, RUNTIME);
+    Network net(graph);
     net.prepare();
 
     Value_t lhs({2, 2});
@@ -98,7 +98,7 @@ void test_matmul() {
         { GraphInputSlot("lhs", lhs_input), GraphInputSlot("rhs", rhs_input) },
         { GraphOutputSlot("output", out.output()) }
     );
-    Network net(graph, RUNTIME);
+    Network net(graph);
     net.prepare();
 
     Value_t lhs({2, 3});
@@ -128,7 +128,7 @@ void test_biasadd() {
         { GraphInputSlot("input", graph_input) },
         { GraphOutputSlot("output", out.output()) }
     );
-    Network net(graph, RUNTIME);
+    Network net(graph);
     net.prepare();
 
     Value_t runtime_input({2, 3, 2});
@@ -168,7 +168,7 @@ void test_linear() {
         { GraphInputSlot("input", graph_input) },
         { GraphOutputSlot("output", out.output()) }
     );
-    Network net(graph, RUNTIME);
+    Network net(graph);
     net.prepare();
 
     Value_t runtime_input({2, 4});
@@ -193,7 +193,7 @@ void test_softmax() {
         { GraphInputSlot("input", graph_input) },
         { GraphOutputSlot("output", out.output()) }
     );
-    Network net(graph, RUNTIME);
+    Network net(graph);
     net.prepare();
 
     Value_t runtime_input({2, 3});
@@ -221,7 +221,7 @@ void test_concat() {
         { GraphInputSlot("a", input_a), GraphInputSlot("b", input_b) },
         { GraphOutputSlot("output", out.output()) }
     );
-    Network net(graph, RUNTIME);
+    Network net(graph);
     net.prepare();
 
     Value_t a({1, 2, 2});
@@ -244,7 +244,7 @@ void test_adaptive_pool() {
         { GraphInputSlot("input", graph_input) },
         { GraphOutputSlot("output", avg_out.output()) }
     );
-    Network avg_net(avg_graph, RUNTIME);
+    Network avg_net(avg_graph);
     avg_net.prepare();
 
     Value_t runtime_input({1, 1, 4, 4});
@@ -262,7 +262,7 @@ void test_adaptive_pool() {
         { GraphInputSlot("input", graph_input) },
         { GraphOutputSlot("output", max_out.output()) }
     );
-    Network max_net(max_graph, RUNTIME);
+    Network max_net(max_graph);
     max_net.prepare();
     Value_t max_output;
     max_net.run({ &runtime_input }, { &max_output });
@@ -272,7 +272,6 @@ void test_adaptive_pool() {
 } // namespace
 
 int main() {
-    RUNTIME->setThreadsNum(1);
     test_relu_sigmoid_dropout();
     test_add();
     test_biasadd();

@@ -40,7 +40,6 @@ static bool has_nonzero_diff_between_batches(const Kernel::core::Value_t& value)
 int main() {
     using namespace Kernel::core;
 
-    RUNTIME->setThreadsNum(1);
 
     Value_t graph_input({2, 3, 6, 6});
 
@@ -56,7 +55,7 @@ int main() {
         { GraphInputSlot("input", graph_input) },
         { GraphOutputSlot("output", l3.output()) }
     );
-    Network network(graph, RUNTIME);
+    Network network(graph);
 
     Value_t runtime_input({2, 3, 6, 6});
     runtime_input.alloc();

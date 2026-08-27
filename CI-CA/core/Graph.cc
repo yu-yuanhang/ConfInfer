@@ -423,25 +423,6 @@ UINT Graph::WorkspaceSize() {
     return wss;
 }
 
-bool Graph::splittable(UINT num) {
-    for (auto it = _execOrder.begin(); it != _execOrder.end(); ++it) {
-        if (!(*it)->sliceable(num)) return false;
-    }
-    return true;
-}
-
-std::vector<LayerSlice *> &Graph::getLayerSlices(UINT sliceId, UINT sliceNum) {
-    static thread_local std::vector<LayerSlice *> slices;
-
-    slices.clear();
-    slices.reserve(_execOrder.size());
-
-    for (auto it = _execOrder.begin(); it != _execOrder.end(); ++it) {
-        slices.push_back((*it)->makeSliceDesc(sliceId, sliceNum));
-    }
-    return slices;
-}
-
 void Graph::dfs_collect(Layer *cur, std::unordered_set<Layer *> &visited) {
     if (!cur || visited.count(cur)) return;
     visited.insert(cur);

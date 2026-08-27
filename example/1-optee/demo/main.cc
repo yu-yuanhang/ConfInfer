@@ -22,17 +22,6 @@ const char *exec_domain_name(ExecutionDomain domain) {
     }
 }
 
-const char *exec_unit_type_name(ExecUnitType type) {
-    switch (type) {
-    case ExecUnitType::EU_LAYER:
-        return "layer";
-    case ExecUnitType::EU_PARTITION:
-        return "partition";
-    default:
-        return "unknown";
-    }
-}
-
 bool is_boundary_layer(const Layer *layer) {
     if (nullptr == layer) {
         return false;
@@ -41,7 +30,7 @@ bool is_boundary_layer(const Layer *layer) {
            layer->type() == LayerType::GRAPH_OUTPUT;
 }
 
-bool has_compute_layer(const ExecutionPartition& part) {
+bool has_compute_layer(const ExecPartition& part) {
     for (Layer *layer : part.layers()) {
         if (!is_boundary_layer(layer)) {
             return true;
@@ -51,11 +40,11 @@ bool has_compute_layer(const ExecutionPartition& part) {
 }
 
 void print_partition_summary(const Network& network) {
-    const std::vector<ExecutionPartition>& parts = network.execPartitions();
-    const ExecutionPlan& plan = network.execPlan();
+    const PartitionGraph& part_graph = network.partGraph();
+    const std::vector<ExecPartition>& parts = part_graph.parts();
 
     std::cout << "[partition] count: " << parts.size() << std::endl;
-    for (const ExecutionPartition& part : parts) {
+    for (const ExecPartition& part : parts) {
         std::cout << "  part[" << part.id() << "]"
                   << " domain=" << exec_domain_name(part.domain())
                   << " layers=" << part.layers().size()
@@ -64,32 +53,19 @@ void print_partition_summary(const Network& network) {
                   << " internals=" << part.internals().size()
                   << std::endl;
     }
-
-    std::cout << "[exec-plan] units: " << plan.size() << std::endl;
-    UINT idx = 0;
-    for (const ExecUnit& unit : plan.units()) {
-        std::cout << "  unit[" << idx++ << "]"
-                  << " type=" << exec_unit_type_name(unit.type())
-                  << " domain=" << exec_domain_name(unit.domain())
-                  << " slices=" << unit.slices().size()
-                  << std::endl;
-    }
 }
 
 void validate_plan(const Network& network) {
-    const std::vector<ExecutionPartition>& parts = network.execPartitions();
-    const ExecutionPlan& plan = network.execPlan();
+    const std::vector<ExecPartition>& parts = network.partGraph().parts();
 
-    EXIT_ERROR_CHECK_EQ(true, parts.empty(), "ExecutionPartition list is empty");
-    EXIT_ERROR_CHECK_EQ(true, plan.empty(), "ExecutionPlan is empty");
-    EXIT_ERROR_CHECK_EQ(nullptr,
-                        EXECUTOR->execBridge(ExecutionDomain::ED_CPU_TEE),
-                        "TEE execution bridge is not installed");
+    EXIT_ERROR_CHECK_EQ(true, parts.empty(), "ExecPartition list is empty");
+    EXIT_ERROR_CHECK_EQ(false,
+                        EXECUTOR->supports(ExecutionDomain::ED_CPU_TEE),
+                        "TEE execution backend is not installed");
 
     UINT tee_parts = 0;
     UINT compute_parts = 0;
-    UINT tee_units = 0;
-    for (const ExecutionPartition& part : parts) {
+    for (const ExecPartition& part : parts) {
         if (has_compute_layer(part)) {
             ++compute_parts;
         }
@@ -97,24 +73,15 @@ void validate_plan(const Network& network) {
             ++tee_parts;
         }
     }
-    for (const ExecUnit& unit : plan.units()) {
-        if (unit.domain() == ExecutionDomain::ED_CPU_TEE) {
-            EXIT_ERROR_CHECK_NE(unit.type(), ExecUnitType::EU_PARTITION,
-                                "TEE execution unit must be partition type");
-            ++tee_units;
-        }
-    }
 
     EXIT_ERROR_CHECK_NE(2u, compute_parts,
                         "Expected exactly 2 compute partitions: REE + TEE");
     EXIT_ERROR_CHECK_NE(1u, tee_parts, "Expected exactly 1 TEE partition");
-    EXIT_ERROR_CHECK_NE(1u, tee_units, "Expected exactly 1 TEE exec unit");
 }
 
 } // namespace
 
 int main() {
-    RUNTIME->setThreadsNum(1);
 
     Conv2d conv(1, 2, {3, 3}, {1, 1}, {1, 1}, {1, 1}, 1, true);
     BatchNorm2d bn(2);
@@ -145,7 +112,7 @@ int main() {
         { GraphInputSlot("input", graph_input) },
         { GraphOutputSlot("output", l7.output()) }
     );
-    Network network(graph, RUNTIME);
+    Network network(graph);
 
     Value_t runtime_input({1, 1, 4, 4});
     runtime_input.alloc();

@@ -48,12 +48,12 @@ struct LinearPlan {
 };
 
 template <typename LayerT>
-LayerT* checked_layer(core::LayerSlice* ls, const char* name) {
-    EXIT_ERROR_CHECK_EQ(nullptr, ls, "LayerSlice is nullptr");
-    auto* layer = dynamic_cast<LayerT*>(ls->layer());
-    EXIT_ERROR_CHECK_EQ(nullptr, layer, "%s layer type mismatch", name);
-    ls->setImpl(layer);
-    return layer;
+LayerT* checked_layer(core::Layer* layer, const char* name) {
+    EXIT_ERROR_CHECK_EQ(nullptr, layer, "Layer is nullptr");
+    auto* typed = dynamic_cast<LayerT*>(layer);
+    EXIT_ERROR_CHECK_EQ(nullptr, typed, "%s layer type mismatch", name);
+    layer->setImpl(typed);
+    return typed;
 }
 
 UINT normalize_axis(INT axis, UINT ndim, const char* name) {
@@ -113,14 +113,14 @@ ConcatPlan* build_concat_plan(core::Concat_L* concat) {
 }
 }
 
-void prepare_relu(core::LayerSlice *ls) {
-    auto* relu = checked_layer<core::UnaryOp_L>(ls, "ReLU");
+void prepare_relu(core::Layer *layer) {
+    auto* relu = checked_layer<core::UnaryOp_L>(layer, "ReLU");
     EXIT_ERROR_CHECK_EQ(nullptr, relu->output().data.ptr, "ReLU output ptr is nullptr");
 }
 
-void execute_relu(core::LayerSlice *ls, ThreadCtx_t *ctx) {
+void execute_relu(core::Layer *layer, core::ExecContext_t *ctx) {
     (void)ctx;
-    auto* relu = ls->impl<core::UnaryOp_L>();
+    auto* relu = layer->impl<core::UnaryOp_L>();
     core::Value_t& input = relu->input(0);
     core::Value_t& output = relu->output();
     EXIT_ERROR_CHECK_EQ(nullptr, input.data.ptr, "ReLU input ptr is nullptr");
@@ -129,14 +129,14 @@ void execute_relu(core::LayerSlice *ls, ThreadCtx_t *ctx) {
                     input.data.shape.size);
 }
 
-void prepare_sigmoid(core::LayerSlice *ls) {
-    auto* sigmoid = checked_layer<core::UnaryOp_L>(ls, "Sigmoid");
+void prepare_sigmoid(core::Layer *layer) {
+    auto* sigmoid = checked_layer<core::UnaryOp_L>(layer, "Sigmoid");
     EXIT_ERROR_CHECK_EQ(nullptr, sigmoid->output().data.ptr, "Sigmoid output ptr is nullptr");
 }
 
-void execute_sigmoid(core::LayerSlice *ls, ThreadCtx_t *ctx) {
+void execute_sigmoid(core::Layer *layer, core::ExecContext_t *ctx) {
     (void)ctx;
-    auto* sigmoid = ls->impl<core::UnaryOp_L>();
+    auto* sigmoid = layer->impl<core::UnaryOp_L>();
     core::Value_t& input = sigmoid->input(0);
     core::Value_t& output = sigmoid->output();
     EXIT_ERROR_CHECK_EQ(nullptr, input.data.ptr, "Sigmoid input ptr is nullptr");
@@ -145,14 +145,14 @@ void execute_sigmoid(core::LayerSlice *ls, ThreadCtx_t *ctx) {
                        input.data.shape.size);
 }
 
-void prepare_dropout(core::LayerSlice *ls) {
-    auto* dropout = checked_layer<core::UnaryOp_L>(ls, "Dropout");
+void prepare_dropout(core::Layer *layer) {
+    auto* dropout = checked_layer<core::UnaryOp_L>(layer, "Dropout");
     EXIT_ERROR_CHECK_EQ(nullptr, dropout->output().data.ptr, "Dropout output ptr is nullptr");
 }
 
-void execute_dropout(core::LayerSlice *ls, ThreadCtx_t *ctx) {
+void execute_dropout(core::Layer *layer, core::ExecContext_t *ctx) {
     (void)ctx;
-    auto* dropout = ls->impl<core::UnaryOp_L>();
+    auto* dropout = layer->impl<core::UnaryOp_L>();
     core::Value_t& input = dropout->input(0);
     core::Value_t& output = dropout->output();
     EXIT_ERROR_CHECK_EQ(nullptr, input.data.ptr, "Dropout input ptr is nullptr");
@@ -160,14 +160,14 @@ void execute_dropout(core::LayerSlice *ls, ThreadCtx_t *ctx) {
                 input.data.shape.size * input.data.getTypeSize());
 }
 
-void prepare_flatten(core::LayerSlice *ls) {
-    auto* flatten = checked_layer<core::Flatten_L>(ls, "Flatten");
+void prepare_flatten(core::Layer *layer) {
+    auto* flatten = checked_layer<core::Flatten_L>(layer, "Flatten");
     EXIT_ERROR_CHECK_EQ(nullptr, flatten->output().data.ptr, "Flatten output ptr is nullptr");
 }
 
-void execute_flatten(core::LayerSlice *ls, ThreadCtx_t *ctx) {
+void execute_flatten(core::Layer *layer, core::ExecContext_t *ctx) {
     (void)ctx;
-    auto* flatten = ls->impl<core::Flatten_L>();
+    auto* flatten = layer->impl<core::Flatten_L>();
     core::Value_t& input = flatten->input(0);
     core::Value_t& output = flatten->output();
     EXIT_ERROR_CHECK_EQ(nullptr, input.data.ptr, "Flatten input ptr is nullptr");
@@ -175,21 +175,21 @@ void execute_flatten(core::LayerSlice *ls, ThreadCtx_t *ctx) {
                 input.data.shape.size * input.data.getTypeSize());
 }
 
-void prepare_softmax(core::LayerSlice *ls) {
-    auto* softmax = checked_layer<core::Softmax_L>(ls, "Softmax");
+void prepare_softmax(core::Layer *layer) {
+    auto* softmax = checked_layer<core::Softmax_L>(layer, "Softmax");
     core::Value_t& input = softmax->input(0);
     core::Value_t& output = softmax->output();
     EXIT_ERROR_CHECK_EQ(nullptr, output.data.ptr, "Softmax output ptr is nullptr");
     auto* plan = new(std::nothrow) SoftmaxPlan();
     EXIT_ERROR_CHECK_EQ(nullptr, plan, "Softmax plan allocation failed");
     plan->axis = normalize_axis(softmax->dim(), input.data.shape.ndim, "Softmax");
-    ls->setCache(plan, delete_softmax_plan);
+    layer->setCache(plan, delete_softmax_plan);
 }
 
-void execute_softmax(core::LayerSlice *ls, ThreadCtx_t *ctx) {
+void execute_softmax(core::Layer *layer, core::ExecContext_t *ctx) {
     (void)ctx;
-    auto* softmax = ls->impl<core::Softmax_L>();
-    auto* plan = ls->cache<SoftmaxPlan>();
+    auto* softmax = layer->impl<core::Softmax_L>();
+    auto* plan = layer->cache<SoftmaxPlan>();
     core::Value_t& input = softmax->input(0);
     core::Value_t& output = softmax->output();
     EXIT_ERROR_CHECK_EQ(nullptr, plan, "Softmax plan is nullptr");
@@ -201,14 +201,14 @@ void execute_softmax(core::LayerSlice *ls, ThreadCtx_t *ctx) {
                             plan->axis);
 }
 
-void prepare_add(core::LayerSlice *ls) {
-    auto* add = checked_layer<core::Add_L>(ls, "Add");
+void prepare_add(core::Layer *layer) {
+    auto* add = checked_layer<core::Add_L>(layer, "Add");
     EXIT_ERROR_CHECK_EQ(nullptr, add->output().data.ptr, "Add output ptr is nullptr");
 }
 
-void execute_add(core::LayerSlice *ls, ThreadCtx_t *ctx) {
+void execute_add(core::Layer *layer, core::ExecContext_t *ctx) {
     (void)ctx;
-    auto* add = ls->impl<core::Add_L>();
+    auto* add = layer->impl<core::Add_L>();
     core::Value_t& lhs = add->input(0);
     core::Value_t& rhs = add->input(1);
     core::Value_t& output = add->output();
@@ -221,8 +221,8 @@ void execute_add(core::LayerSlice *ls, ThreadCtx_t *ctx) {
                    add->alpha());
 }
 
-void prepare_biasadd(core::LayerSlice *ls) {
-    auto* biasadd = checked_layer<core::BiasAdd_L>(ls, "BiasAdd");
+void prepare_biasadd(core::Layer *layer) {
+    auto* biasadd = checked_layer<core::BiasAdd_L>(layer, "BiasAdd");
     core::Value_t& input = biasadd->input(0);
     core::Value_t& output = biasadd->output();
     const core::Data_t* bias = biasadd->param(core::ParamRole::BIAS);
@@ -232,9 +232,9 @@ void prepare_biasadd(core::LayerSlice *ls) {
     normalize_axis(biasadd->dim(), input.data.shape.ndim, "BiasAdd");
 }
 
-void execute_biasadd(core::LayerSlice *ls, ThreadCtx_t *ctx) {
+void execute_biasadd(core::Layer *layer, core::ExecContext_t *ctx) {
     (void)ctx;
-    auto* biasadd = ls->impl<core::BiasAdd_L>();
+    auto* biasadd = layer->impl<core::BiasAdd_L>();
     core::Value_t& input = biasadd->input(0);
     core::Value_t& output = biasadd->output();
     const core::Data_t* bias = biasadd->param(core::ParamRole::BIAS);
@@ -248,8 +248,8 @@ void execute_biasadd(core::LayerSlice *ls, ThreadCtx_t *ctx) {
                              axis);
 }
 
-void prepare_concat(core::LayerSlice *ls) {
-    auto* concat = checked_layer<core::Concat_L>(ls, "Concat");
+void prepare_concat(core::Layer *layer) {
+    auto* concat = checked_layer<core::Concat_L>(layer, "Concat");
     core::Value_t& output = concat->output();
     EXIT_ERROR_CHECK_EQ(nullptr, output.data.ptr, "Concat output ptr is nullptr");
     const UINT axis = normalize_axis(concat->dim(), output.data.shape.ndim, "Concat");
@@ -264,13 +264,13 @@ void prepare_concat(core::LayerSlice *ls) {
                 "Concat input shape mismatch");
         }
     }
-    ls->setCache(build_concat_plan(concat), delete_concat_plan);
+    layer->setCache(build_concat_plan(concat), delete_concat_plan);
 }
 
-void execute_concat(core::LayerSlice *ls, ThreadCtx_t *ctx) {
+void execute_concat(core::Layer *layer, core::ExecContext_t *ctx) {
     (void)ctx;
-    auto* concat = ls->impl<core::Concat_L>();
-    auto* plan = ls->cache<ConcatPlan>();
+    auto* concat = layer->impl<core::Concat_L>();
+    auto* plan = layer->cache<ConcatPlan>();
     core::Value_t& output = concat->output();
     EXIT_ERROR_CHECK_EQ(nullptr, plan, "Concat plan is nullptr");
     FLOAT* out_ptr = static_cast<FLOAT*>(output.data.ptr);
@@ -290,8 +290,8 @@ void execute_concat(core::LayerSlice *ls, ThreadCtx_t *ctx) {
     }
 }
 
-void prepare_matmul(core::LayerSlice *ls) {
-    auto* matmul = checked_layer<core::MatMul_L>(ls, "MatMul");
+void prepare_matmul(core::Layer *layer) {
+    auto* matmul = checked_layer<core::MatMul_L>(layer, "MatMul");
     core::Value_t& lhs = matmul->input(0);
     core::Value_t& rhs = matmul->input(1);
     core::Value_t& output = matmul->output();
@@ -312,13 +312,13 @@ void prepare_matmul(core::LayerSlice *ls) {
     plan->a_stride = plan->M * plan->K;
     plan->b_stride = plan->K * plan->N;
     plan->c_stride = plan->M * plan->N;
-    ls->setCache(plan, delete_matmul_plan);
+    layer->setCache(plan, delete_matmul_plan);
 }
 
-void execute_matmul(core::LayerSlice *ls, ThreadCtx_t *ctx) {
+void execute_matmul(core::Layer *layer, core::ExecContext_t *ctx) {
     (void)ctx;
-    auto* matmul = ls->impl<core::MatMul_L>();
-    auto* plan = ls->cache<MatMulPlan>();
+    auto* matmul = layer->impl<core::MatMul_L>();
+    auto* plan = layer->cache<MatMulPlan>();
     core::Value_t& lhs = matmul->input(0);
     core::Value_t& rhs = matmul->input(1);
     core::Value_t& output = matmul->output();
@@ -337,8 +337,8 @@ void execute_matmul(core::LayerSlice *ls, ThreadCtx_t *ctx) {
     }
 }
 
-void prepare_linear(core::LayerSlice *ls) {
-    auto* linear = checked_layer<core::Linear_L>(ls, "Linear");
+void prepare_linear(core::Layer *layer) {
+    auto* linear = checked_layer<core::Linear_L>(layer, "Linear");
     core::Value_t& input = linear->input(0);
     core::Value_t& output = linear->output();
     const core::Data_t* weight = linear->param(core::ParamRole::WEIGHT);
@@ -359,13 +359,13 @@ void prepare_linear(core::LayerSlice *ls) {
     plan->out_features = linear->outFeatures();
     plan->outer = input.data.shape.size / plan->in_features;
     plan->bias_enabled = linear->biasEnabled();
-    ls->setCache(plan, delete_linear_plan);
+    layer->setCache(plan, delete_linear_plan);
 }
 
-void execute_linear(core::LayerSlice *ls, ThreadCtx_t *ctx) {
+void execute_linear(core::Layer *layer, core::ExecContext_t *ctx) {
     (void)ctx;
-    auto* linear = ls->impl<core::Linear_L>();
-    auto* plan = ls->cache<LinearPlan>();
+    auto* linear = layer->impl<core::Linear_L>();
+    auto* plan = layer->cache<LinearPlan>();
     core::Value_t& input = linear->input(0);
     core::Value_t& output = linear->output();
     EXIT_ERROR_CHECK_EQ(nullptr, plan, "Linear plan is nullptr");

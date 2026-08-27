@@ -2,15 +2,52 @@
 
 set -eu
 
-SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+SCRIPT_PATH="${BASH_SOURCE[0]:-$0}"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$SCRIPT_PATH")" && pwd)"
 WORK_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../../../.." && pwd)"
-# REPO_ROOT="$WORK_ROOT/optee_qemuv8/optee_doc-3.22.0"
-# REPO_ROOT="$WORK_ROOT/hikey960/optee_doc-3.22.0"
-REPO_ROOT="$WORK_ROOT/FVP/FVP-3.22.0"
+
+find_repo_root_from() {
+    local start="$1"
+    local dir=""
+
+    dir="$(CDPATH= cd -- "$start" && pwd)"
+    while [ "$dir" != "/" ]; do
+        if [ -d "$dir/out-br/host/bin" ]; then
+            printf '%s\n' "$dir"
+            return 0
+        fi
+        dir="$(dirname "$dir")"
+    done
+    return 1
+}
+
+resolve_repo_root() {
+    local root=""
+    local default_repo_root=""
+
+    default_repo_root="$WORK_ROOT/FVP/FVP-3.22.0"
+    if [ -n "${CONFINFER_CI_TA_REPO_ROOT:-}" ]; then
+        root="$(CDPATH= cd -- "$CONFINFER_CI_TA_REPO_ROOT" && pwd)"
+    elif root="$(find_repo_root_from "$PWD")"; then
+        :
+    elif [ -d "$default_repo_root/out-br/host/bin" ]; then
+        root="$default_repo_root"
+    elif [ -d "$WORK_ROOT/out-br/host/bin" ]; then
+        root="$WORK_ROOT"
+    else
+        echo "Unable to locate Buildroot host toolchain. Set CONFINFER_CI_TA_REPO_ROOT explicitly." >&2
+        exit 1
+    fi
+
+    printf '%s\n' "$root"
+}
+
+REPO_ROOT="$(resolve_repo_root)"
 HOST_DIR="$REPO_ROOT/out-br/host"
 SYSROOT="$HOST_DIR/aarch64-buildroot-linux-gnu/sysroot"
 BIN_DIR="$HOST_DIR/bin"
 
+export CONFINFER_CI_TA_REPO_ROOT="$REPO_ROOT"
 export CONFINFER_CI_TA_HOST_DIR="$HOST_DIR"
 export CONFINFER_CI_TA_SYSROOT="$SYSROOT"
 export CONFINFER_CI_TA_CROSS_COMPILE="$BIN_DIR/aarch64-linux-gnu-"

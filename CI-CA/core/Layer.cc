@@ -44,6 +44,11 @@ Layer::Layer(LayerType type, OpSignature *opSignature):
     _inputs(), _outputs(),
     _workspaceSize(0),
     _params(nullptr),
+    _backend(nullptr),
+    _exec(nullptr),
+    _impl(nullptr),
+    _cache(nullptr),
+    _cache_deleter(nullptr),
     _opSignature(opSignature)
 {
     // LogDebug("Layer(LayerType type)");
@@ -57,6 +62,14 @@ Layer::Layer(const Layer &rhs) {
 }
 
 Layer::~Layer() {
+    if (nullptr != _cache_deleter && nullptr != _cache) {
+        _cache_deleter(_cache);
+    }
+    _cache = nullptr;
+    _cache_deleter = nullptr;
+    _impl = nullptr;
+    _exec = nullptr;
+    _backend = nullptr;
     // Layer 生命周期由 OpSignature 管理
     // 这里无需基于 OpSignature._ownParams 判断是否释放 _params
     if (_params) {
@@ -64,18 +77,6 @@ Layer::~Layer() {
         _params = nullptr;
     }
     _opSignature = nullptr;
-}
-
-LayerSlice *Layer::makeSliceDesc(UINT sliceId, UINT sliceNum) {
-    SliceDesc_t desc{};
-    desc.sliceId = sliceId;
-    desc.sliceNum = sliceNum;
-    desc.workspaceOffset = 0;
-    desc.workspaceSize = _workspaceSize;
-
-    LayerSlice *ls = new LayerSlice(this, desc);
-
-    return ls;
 }
 
 void Layer::bind_inputs (Value_t &value) {

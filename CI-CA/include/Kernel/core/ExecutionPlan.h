@@ -11,19 +11,15 @@ enum class ExecUnitType : uint8_t {
     EU_PARTITION,
 };
 
-// 这里的执行单元有些乱 
-// 最初就是简单的按照 LayerSlice 逐层执行
-// 后来为不同执行区域 (主要是为了服务 TEE 内的连续调用) 的执行单元添加了 domain 属性
-// 所以新增了 ExecutionPartition 
-// 但是 ExecutionPartition 只是作用对象是计算图结构和 Layer
-// 而框架原先的执行单元是 LayerSlice 所以需要有一个统一的执行单元
+// ExecutionPlan 是运行阶段真正消费的执行序列。
+// 当前 ExecutionPlan 直接持有 Layer*，
 class ExecUnit {
 public:
     ExecUnit()
         : _type(ExecUnitType::EU_LAYER),
           _domain(ExecutionDomain::ED_DEFAULT),
           _part(nullptr),
-          _slices(),
+          _layers(),
           _inputs(),
           _outputs() {}
 
@@ -33,14 +29,14 @@ public:
     ExecutionDomain domain() const { return _domain; }
     void setDomain(ExecutionDomain domain) { _domain = domain; }
 
-    const ExecutionPartition *part() const { return _part; }
-    void setPart(const ExecutionPartition *part) { _part = part; }
+    const ExecPartition *part() const { return _part; }
+    void setPart(const ExecPartition *part) { _part = part; }
 
-    const std::vector<LayerSlice *>& slices() const { return _slices; }
+    const std::vector<Layer *>& layers() const { return _layers; }
     const std::vector<Value_t *>& inputs() const { return _inputs; }
     const std::vector<Value_t *>& outputs() const { return _outputs; }
 
-    void addSlice(LayerSlice *slice) { pushUnique(_slices, slice); }
+    void addLayer(Layer *layer) { pushUnique(_layers, layer); }
     void addInput(Value_t *value) { pushUnique(_inputs, value); }
     void addOutput(Value_t *value) { pushUnique(_outputs, value); }
 
@@ -55,10 +51,9 @@ private:
 private:
     ExecUnitType _type;
     ExecutionDomain _domain;
-    // ExecUnit 不拥有 partition / slice / value 生命周期
-    const ExecutionPartition *_part;
-    // 一个 ExecUnit 可以表示 一个或多个  LayerSlice
-    std::vector<LayerSlice *> _slices;
+    // ExecUnit 不拥有 partition / layer / value 生命周期
+    const ExecPartition *_part;
+    std::vector<Layer *> _layers;
     std::vector<Value_t *> _inputs;
     std::vector<Value_t *> _outputs;
 };

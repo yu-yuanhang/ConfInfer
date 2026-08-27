@@ -4,7 +4,7 @@
 
 TEE_Result ta_execute_conv2d_fp32(ta_layer_exec_ctx_t *ctx)
 {
-    const confinfer_conv_attr_t *attr = NULL;
+    const confinfer_model_image_conv_attr_t *attr = NULL;
     ta_value_t *input = NULL;
     ta_value_t *output = NULL;
     ta_param_t *weight = NULL;
@@ -44,7 +44,7 @@ TEE_Result ta_execute_conv2d_fp32(ta_layer_exec_ctx_t *ctx)
         return TEE_ERROR_BAD_PARAMETERS;
     }
 
-    attr = (const confinfer_conv_attr_t *)ta_backend_attr(ctx, sizeof(*attr));
+    attr = (const confinfer_model_image_conv_attr_t *)ta_backend_attr(ctx, sizeof(*attr));
     input = ta_backend_input(ctx, 0);
     output = ta_backend_output(ctx, 0);
     weight = ta_backend_param_by_role(ctx, CONFINFER_PARAM_ROLE_WEIGHT);

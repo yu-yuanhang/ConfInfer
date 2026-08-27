@@ -493,7 +493,7 @@ void test_complex_cnn_graph() {
             GraphOutputSlot("adaptive_max_idx", l5.output(OutputKind::Indices))
         }
     );
-    Network net(graph, RUNTIME);
+    Network net(graph);
     net.prepare();
 
     Value_t runtime_input({1, 1, 4, 4});
@@ -607,7 +607,7 @@ void test_dense_residual_graph() {
         { GraphInputSlot("x", graph_x), GraphInputSlot("w", graph_w) },
         { GraphOutputSlot("output", l8.output()) }
     );
-    Network net(graph, RUNTIME);
+    Network net(graph);
     net.prepare();
 
     Value_t runtime_x({2, 4});
@@ -667,7 +667,6 @@ void test_dense_residual_graph() {
 } // namespace
 
 int main() {
-    RUNTIME->setThreadsNum(1);
     test_complex_cnn_graph();
     test_dense_residual_graph();
     std::cout << "integration demo ok" << std::endl;

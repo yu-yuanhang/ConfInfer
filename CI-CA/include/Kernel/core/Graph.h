@@ -53,8 +53,6 @@ public:
     // ... todo 图构建方式已经改变
     void buildExecutionOrder(Layer *inputL);
     UINT WorkspaceSize();
-    bool splittable(UINT num = 0);
-    std::vector<LayerSlice *> &getLayerSlices(UINT sliceId, UINT sliceNum);
 
 private:
     void dfs_collect(Layer *cur, std::unordered_set<Layer *> &visited);

@@ -5,16 +5,19 @@
 #include <core/Layer.h>
 
 namespace Kernel {
+namespace backend { class Backend; }
 namespace core {
 
+using Kernel::backend::Backend;
+
 // 用来表示一个执行分区 一些 Layer 的聚合
-// 但是在本项目的背景下 PartitionBuilder 决定了 Layer 执行分区的 划分准则
 // 默认就是代表了同一执行域且 拓扑连续的 Layers
-class ExecutionPartition {
+class ExecPartition {
 public:
-    ExecutionPartition()
+    ExecPartition()
         : _id(_counter.fetch_add(1, std::memory_order_relaxed)),
           _domain(ExecutionDomain::ED_DEFAULT),
+          _backend(nullptr),
           _layers(),
           _inputs(),
           _outputs(),
@@ -29,6 +32,8 @@ public:
 
     ExecutionDomain domain() const { return _domain; }
     void setDomain(ExecutionDomain domain) { _domain = domain; }
+    Backend *backend() const { return _backend; }
+    void setBackend(Backend *backend) { _backend = backend; }
 
     const std::vector<Layer *>& layers() const { return _layers; }
     const std::vector<Value_t *>& inputs() const { return _inputs; }
@@ -59,6 +64,7 @@ public:
     void clear() {
         _id = _counter.fetch_add(1, std::memory_order_relaxed);
         _domain = ExecutionDomain::ED_DEFAULT;
+        _backend = nullptr;
         _layers.clear();
         _inputs.clear();
         _outputs.clear();
@@ -78,8 +84,9 @@ private:
     static std::atomic<UINT> _counter;
     UINT _id;
     ExecutionDomain _domain;
-    // 这里在设计原则上 ExecutionPartition 不应该直接拥有数据的管理权
-    // ExecutionPartition 不负责以下数据生命周期的管理
+    Backend *_backend;
+    // 这里在设计原则上 ExecPartition 不应该直接拥有数据的管理权
+    // ExecPartition 不负责以下数据生命周期的管理
     // 只作为 Graph 生命周期内的只读观察者
     std::vector<Layer *> _layers;
     std::vector<Value_t *> _inputs;
@@ -88,6 +95,8 @@ private:
     // partition 内部节点的执行顺序
     std::vector<Layer *> _topo;
 };
+
+using ExecutionPartition = ExecPartition;
 
 } // namespace core
 } // namespace Kernel

@@ -11,6 +11,8 @@ TARGET_APP_DIR := $(TARGET_ROOTFS_DIR)/root
 TARGET_LIB_DIR := $(TARGET_ROOTFS_DIR)/usr/lib64
 SYSROOT := $(HOST_DIR)/aarch64-buildroot-linux-gnu/sysroot
 BIN_DIR := $(HOST_DIR)/bin
+SYNC_TARGET_DIR := $(REPO_ROOT)/optee_examples/CI-TA
+SYNC_CI_TA ?= 1
 
 override CC := $(BIN_DIR)/aarch64-linux-gnu-gcc
 override CXX := $(BIN_DIR)/aarch64-linux-gnu-g++
@@ -18,8 +20,8 @@ override AR := $(BIN_DIR)/aarch64-linux-gnu-ar
 override RANLIB := $(BIN_DIR)/aarch64-linux-gnu-ranlib
 
 TEEC_EXPORT := $(SYSROOT)/usr
-ARTIFACT_DIR := $(CURDIR)
-OUT_DIR := $(CURDIR)/out
+ARTIFACT_DIR := $(REPO_ROOT)/.codex_build/1-optee-demo
+OUT_DIR := $(ARTIFACT_DIR)
 OBJS := $(OUT_DIR)/main.o
 BINARY := $(OUT_DIR)/confinfer_demo
 DEPLOY_BINARY := $(TARGET_APP_DIR)/$(notdir $(BINARY))
@@ -46,7 +48,15 @@ LDFLAGS += -Wl,-rpath,/usr/lib64 -Wl,-rpath,/usr/lib
 all: sync_ci_ta check_confinfer_lib $(BINARY)
 
 sync_ci_ta:
-	bash $(CI_TA_DIR)/scripts/sync_to_optee_examples.sh
+ifeq ($(SYNC_CI_TA),1)
+	@if [ -e "$(SYNC_TARGET_DIR)" ] && [ ! -w "$(SYNC_TARGET_DIR)" ]; then \
+		echo "Skip CI-TA sync: $(SYNC_TARGET_DIR) is not writable in current environment."; \
+	else \
+		bash $(CI_TA_DIR)/scripts/sync_to_optee_examples.sh; \
+	fi
+else
+	@echo "Skip CI-TA sync: SYNC_CI_TA=$(SYNC_CI_TA)"
+endif
 
 check_confinfer_lib:
 	test -f "$(CONFINFER_LIB)" || \
@@ -68,9 +78,6 @@ info:
 
 $(OUT_DIR):
 	mkdir -p $(OUT_DIR)
-
-$(ARTIFACT_DIR):
-	mkdir -p $(ARTIFACT_DIR)
 
 $(OUT_DIR)/main.o: main.cc | $(OUT_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
