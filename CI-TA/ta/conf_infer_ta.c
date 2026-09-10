@@ -34,6 +34,10 @@
 
 TEE_Result TA_CreateEntryPoint(void)
 {
+    /*
+     * 模型存储在 TA 生命周期作用域内初始化一次
+     * 因为 prepare 成功后的模型对象可以超出单个 client session 的生命周期
+     */
     ta_runtime_init();
     DMSG("TA_CreateEntryPoint");
     return TEE_SUCCESS;
@@ -62,6 +66,11 @@ TEE_Result TA_OpenSessionEntryPoint(uint32_t param_types,
     confinfer_ta_session_t *ctx = NULL;
 
     (void)&params;
+    /*
+     * 这里分配一个 session 对象
+     * 因为分块上传和分块执行需要调用方独有的短暂状态
+     * session 关闭时这些状态必须一同消失
+     */
     ctx = TEE_Malloc(sizeof(*ctx), TEE_MALLOC_FILL_ZERO);
     if (!ctx) {
         return TEE_ERROR_OUT_OF_MEMORY;
@@ -75,6 +84,11 @@ void TA_CloseSessionEntryPoint(void __maybe_unused *sess_ctx)
 {
     confinfer_ta_session_t *ctx = (confinfer_ta_session_t *)sess_ctx;
 
+    /*
+     * 这里释放暂存上传缓冲区 因为它们只属于传输状态
+     * 已转入 runtime 所有权的 prepared 模型
+     * 通过独立的 unload 路径在其他位置释放
+     */
     if (ctx) {
         if (ctx->prepare_image_upload.buffer) {
             TEE_Free(ctx->prepare_image_upload.buffer);
@@ -98,9 +112,17 @@ TEE_Result TA_InvokeCommandEntryPoint(void __maybe_unused *sess_ctx,
                                       uint32_t param_types,
                                       TEE_Param params[4])
 {
+    /*
+     * 分发关系保持平铺且明确
+     * 因为 command id 到处理函数的映射属于协议约定
+     * 应当易于检查
+     */
     switch (cmd_id) {
     case TA_CONFINFER_CMD_PREPARE_MODEL_IMAGE:
         return confinfer_ta_prepare_model_image(sess_ctx, param_types, params);
+    case TA_CONFINFER_CMD_PREPARE_MODEL_IMAGE_TRUSTSPAN:
+        return confinfer_ta_prepare_model_image_trustspan(sess_ctx, param_types,
+                                                           params);
     case TA_CONFINFER_CMD_PREPARE_MODEL_IMAGE_BEGIN:
         return confinfer_ta_prepare_model_image_begin(sess_ctx, param_types, params);
     case TA_CONFINFER_CMD_PREPARE_MODEL_IMAGE_CHUNK:

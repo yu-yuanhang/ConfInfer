@@ -7,6 +7,10 @@
 
 static ta_model_store_t g_model_store;
 
+/*
+ * image 描述符规整为较小的 runtime 数据形态
+ * 避免 backend 在执行期间反复解析原始 image 结构
+ */
 static void ta_data_init_from_value_desc(ta_data_t *dst,
                                          const confinfer_model_image_value_desc_t *src,
                                          void *buffer)
@@ -68,6 +72,10 @@ static void ta_release_model_image(ta_model_t *model)
     if (!model) {
         return;
     }
+    /*
+     * 先释放 runtime 视图 再释放原始 image
+     * 因为视图中的许多指针有意指向 image 所拥有的字节
+     */
     if (model->partitions) {
         for (i = 0; i < model->partition_count; ++i) {
             ta_partition_release(&model->partitions[i]);
@@ -75,11 +83,13 @@ static void ta_release_model_image(ta_model_t *model)
         TEE_Free(model->partitions);
     }
     model->partitions = NULL;
-    if (model->image_data) {
+    if (model->image_data && model->image_owned) {
         TEE_Free(model->image_data);
     }
     model->image_data = NULL;
     model->image_size = 0;
+    model->image_owned = 0;
+    model->image_mapping_size = 0;
     model->partition_count = 0;
     model->param_count = 0;
     model->is_registered = 0;
@@ -232,39 +242,30 @@ TEE_Result ta_model_ensure(confinfer_model_id_t model_id, ta_model_t **out_model
     return TEE_SUCCESS;
 }
 
-TEE_Result ta_model_load_image(ta_model_t *model,
-                               const void *image_data,
-                               size_t image_size)
+// 不管是 trustspan=1 还是 默认条件下
+// ta_model_load_image / ta_model_attach_image 都会统一调用 ta_model_install_image
+static TEE_Result ta_model_install_image(
+    ta_model_t *model,
+    void *image_data,
+    size_t image_size,
+    size_t image_mapping_size,
+    uint32_t image_owned)
 {
-    void *image_copy = NULL;
     const confinfer_model_image_header_t *hdr =
         (const confinfer_model_image_header_t *)image_data;
     const confinfer_model_image_partition_entry_t *entries = NULL;
     TEE_Result res = TEE_SUCCESS;
     uint32_t i = 0;
 
-    if (!model || !image_data || image_size < sizeof(*hdr)) {
-        return TEE_ERROR_BAD_PARAMETERS;
-    }
-
-    res = validate_model_image_header(hdr, image_size);
-    if (res != TEE_SUCCESS) {
-        return res;
-    }
-
-    image_copy = TEE_Malloc(image_size, TEE_MALLOC_FILL_ZERO);
-    if (!image_copy) {
-        return TEE_ERROR_OUT_OF_MEMORY;
-    }
-    TEE_MemMove(image_copy, image_data, image_size);
-
     ta_release_model_image(model);
     model->model_id = hdr->model_id;
     model->flags = hdr->flags;
     model->partition_count = hdr->partition_count;
     model->param_count = hdr->param_desc_count;
-    model->image_data = image_copy;
+    model->image_data = image_data;
     model->image_size = (uint32_t)image_size;
+    model->image_owned = image_owned;
+    model->image_mapping_size = image_mapping_size;
     model->is_registered = 1;
     if (model->partition_count == 0) {
         return TEE_SUCCESS;
@@ -289,6 +290,59 @@ TEE_Result ta_model_load_image(ta_model_t *model,
         }
     }
     return TEE_SUCCESS;
+}
+
+// 默认 ta_model_load_image() 仍然复制 Image 并由 TA 释放
+TEE_Result ta_model_load_image(ta_model_t *model,
+                               const void *image_data,
+                               size_t image_size)
+{
+    const confinfer_model_image_header_t *hdr =
+        (const confinfer_model_image_header_t *)image_data;
+    void *image_copy = NULL;
+    TEE_Result res = TEE_SUCCESS;
+
+    if (!model || !image_data || image_size < sizeof(*hdr)) {
+        return TEE_ERROR_BAD_PARAMETERS;
+    }
+
+    res = validate_model_image_header(hdr, image_size);
+    if (res != TEE_SUCCESS) {
+        return res;
+    }
+
+    image_copy = TEE_Malloc(image_size, TEE_MALLOC_FILL_ZERO);
+    if (!image_copy) {
+        return TEE_ERROR_OUT_OF_MEMORY;
+    }
+    TEE_MemMove(image_copy, image_data, image_size);
+
+    return ta_model_install_image(model, image_copy, image_size, image_size, 1);
+}
+
+// TrustSpan 后续调用 ta_model_attach_image() 时不分配 不复制
+// 也不会在 unload 时错误 TEE_Free Span 映射
+TEE_Result ta_model_attach_image(ta_model_t *model,
+                                 void *image_data,
+                                 size_t image_size,
+                                 size_t image_mapping_size)
+{
+    const confinfer_model_image_header_t *hdr =
+        (const confinfer_model_image_header_t *)image_data;
+    TEE_Result res = TEE_SUCCESS;
+
+    if (!model || !image_data || image_size < sizeof(*hdr) ||
+        image_mapping_size < image_size) {
+        return TEE_ERROR_BAD_PARAMETERS;
+    }
+
+    res = validate_model_image_header(hdr, image_size);
+    if (res != TEE_SUCCESS) {
+        return res;
+    }
+
+    return ta_model_install_image(model, image_data, image_size,
+                                  image_mapping_size, 0);
 }
 
 const confinfer_model_image_header_t *ta_model_image_header(const ta_model_t *model)
@@ -492,6 +546,11 @@ static TEE_Result build_partition_values(ta_partition_t *part,
     if (view->header->value_count == 0) {
         return TEE_SUCCESS;
     }
+    /*
+     * 每个 runtime value 绑定到 runtime_data 中固定的切片
+     * 当前不进行基于生命周期的复用
+     * 因为当前首先需要让 image 布局与执行语义保持明确且易于检查
+     */
     runtime_data = (uint8_t *)view->header + view->header->runtime_data_off;
 
     part->values = TEE_Malloc(view->header->value_count * sizeof(*part->values),
@@ -538,6 +597,11 @@ static TEE_Result build_partition_layers(const ta_model_t *model,
     uint32_t i = 0;
     uint32_t param_base = 0;
 
+    /*
+     * 即使许多字段仍指向 image 仍展开 layer 对象
+     * 因为执行代码需要稳定的 partition 局部视图
+     * 无需每次执行都追踪原始表
+     */
     if (part->layer_count == 0) {
         return TEE_SUCCESS;
     }

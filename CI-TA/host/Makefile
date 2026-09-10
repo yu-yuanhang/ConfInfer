@@ -8,7 +8,8 @@ READELF ?= $(CROSS_COMPILE)readelf
 RANLIB  ?= $(CROSS_COMPILE)ranlib
 
 OUT_DIR := $(CURDIR)/out
-LIB_OBJS := $(OUT_DIR)/confinfer_host.o
+LIB_OBJS := $(OUT_DIR)/confinfer_host.o \
+	$(OUT_DIR)/confinfer_host_internal.o
 
 TEEC_EXPORT ?=
 
@@ -45,5 +46,8 @@ $(HOSTLIB): $(LIB_OBJS)
 clean:
 	rm -rf $(OUT_DIR) $(HOSTLIB)
 
-$(OUT_DIR)/confinfer_host.o: confinfer_host.c ./include/confinfer_host.h | $(OUT_DIR)
+$(OUT_DIR)/confinfer_host.o: confinfer_host.c ./include/confinfer_host.h ./include/confinfer_host_internal.h | $(OUT_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(OUT_DIR)/confinfer_host_internal.o: confinfer_host_internal.c ./include/confinfer_host.h ./include/confinfer_host_internal.h | $(OUT_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@

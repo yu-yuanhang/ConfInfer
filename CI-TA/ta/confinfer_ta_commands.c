@@ -5,6 +5,7 @@
 #include <confinfer_ta_backend.h>
 #include <confinfer_ta_commands.h>
 #include <confinfer_ta_runtime.h>
+#include <pta_span.h>
 
 #define CONFINFER_TA_MAX_STAGED_IMAGE_BYTES (2u * 1024u * 1024u)
 #define CONFINFER_TA_MAX_STAGED_EXEC_BYTES  (2u * 1024u * 1024u)
@@ -14,6 +15,10 @@ static confinfer_ta_session_t *as_session(void *sess_ctx)
     return (confinfer_ta_session_t *)sess_ctx;
 }
 
+/*
+ * session 暂存状态与模型 runtime 状态分开
+ * 分块上传可能中途失败 不应破坏已准备完成的模型
+ */
 static ta_model_t *find_ready_model(confinfer_model_id_t model_id)
 {
     ta_model_t *model = ta_model_find(model_id);
@@ -22,6 +27,102 @@ static ta_model_t *find_ready_model(confinfer_model_id_t model_id)
         return NULL;
     }
     return model;
+}
+
+// 两个本地辅助函数 span_map_image / span_release_image
+// 输入 REE 连续区的 phys_addr 与 region_size
+// 打开 Span PTA session
+// 调用 PTA_SPAN_CMD_PROTECT
+// PTA 先通过 TF-A 保护物理区，再映射到当前 ConfInfer TA
+// 返回 ta_vaddr 和实际 mapped_size
+static TEE_Result span_map_image(uint64_t phys_addr, uint64_t region_size,
+                                 uint64_t *ta_vaddr, uint64_t *mapped_size,
+                                 bool *region_released)
+{
+    TEE_TASessionHandle session = TEE_HANDLE_NULL;
+    TEE_UUID uuid = PTA_SPAN_UUID;
+    TEE_Param params[TEE_NUM_PARAMS] = { };
+    uint32_t origin = 0;
+    TEE_Result res = TEE_SUCCESS;
+    const uint32_t param_types =
+        TEE_PARAM_TYPES(TEE_PARAM_TYPE_VALUE_INPUT,
+                        TEE_PARAM_TYPE_VALUE_INPUT,
+                        TEE_PARAM_TYPE_VALUE_OUTPUT,
+                        TEE_PARAM_TYPE_VALUE_OUTPUT);
+
+    if (!phys_addr || !region_size || !ta_vaddr || !mapped_size ||
+        !region_released) {
+        return TEE_ERROR_BAD_PARAMETERS;
+    }
+
+    *region_released = false;
+
+    res = TEE_OpenTASession(&uuid, TEE_TIMEOUT_INFINITE, 0, NULL,
+                            &session, &origin);
+    if (res != TEE_SUCCESS) {
+        *region_released = true;
+        return res;
+    }
+
+    params[0].value.a = (uint32_t)(phys_addr >> 32);
+    params[0].value.b = (uint32_t)phys_addr;
+    params[1].value.a = (uint32_t)(region_size >> 32);
+    params[1].value.b = (uint32_t)region_size;
+    res = TEE_InvokeTACommand(session, TEE_TIMEOUT_INFINITE,
+                              PTA_SPAN_CMD_PROTECT, param_types,
+                              params, &origin);
+    if (res == TEE_SUCCESS &&
+        params[2].value.a == PTA_SPAN_PROTECT_REGION_RELEASED &&
+        params[2].value.b == 0 && params[3].value.a == 0 &&
+        params[3].value.b == 0) {
+        *region_released = true;
+        res = TEE_ERROR_GENERIC;
+    } else if (res == TEE_SUCCESS) {
+        *ta_vaddr = ((uint64_t)params[2].value.a << 32) | params[2].value.b;
+        *mapped_size = ((uint64_t)params[3].value.a << 32) | params[3].value.b;
+    }
+
+    TEE_CloseTASession(session);
+    return res;
+}
+
+// 输入此前得到的 ta_vaddr 与 mapped_size
+// 调用 PTA_SPAN_CMD_RELEASE
+// PTA 先解除当前 ConfInfer TA 的虚拟映射
+// 再通过 TF-A 撤销该物理区的 TZC 保护
+// 此处不处理 REE 或 Linux 侧的物理页释放
+static TEE_Result span_release_image(uint64_t ta_vaddr, uint64_t mapped_size)
+{
+    TEE_TASessionHandle session = TEE_HANDLE_NULL;
+    TEE_UUID uuid = PTA_SPAN_UUID;
+    TEE_Param params[TEE_NUM_PARAMS] = { };
+    uint32_t origin = 0;
+    TEE_Result res = TEE_SUCCESS;
+    const uint32_t param_types =
+        TEE_PARAM_TYPES(TEE_PARAM_TYPE_VALUE_INPUT,
+                        TEE_PARAM_TYPE_VALUE_INPUT,
+                        TEE_PARAM_TYPE_NONE,
+                        TEE_PARAM_TYPE_NONE);
+
+    if (!ta_vaddr || !mapped_size) {
+        return TEE_ERROR_BAD_PARAMETERS;
+    }
+
+    res = TEE_OpenTASession(&uuid, TEE_TIMEOUT_INFINITE, 0, NULL,
+                            &session, &origin);
+    if (res != TEE_SUCCESS) {
+        return res;
+    }
+
+    params[0].value.a = (uint32_t)(ta_vaddr >> 32);
+    params[0].value.b = (uint32_t)ta_vaddr;
+    params[1].value.a = (uint32_t)(mapped_size >> 32);
+    params[1].value.b = (uint32_t)mapped_size;
+    res = TEE_InvokeTACommand(session, TEE_TIMEOUT_INFINITE,
+                              PTA_SPAN_CMD_RELEASE, param_types,
+                              params, &origin);
+    TEE_CloseTASession(session);
+    return res;
 }
 
 static void reset_prepare_image_upload(confinfer_ta_session_t *session)
@@ -152,6 +253,12 @@ static TEE_Result execute_partition_once(confinfer_model_id_t model_id,
         return TEE_ERROR_BAD_PARAMETERS;
     }
 
+    /*
+     * 执行保持为三个步骤
+     * 导入输入 执行一次 导出输出
+     * 在引入更复杂的 buffer 共享策略前
+     * 这能让 backend 契约保持简单
+     */
     res = load_partition_inputs(part, input_blob, input_bytes);
     if (res == TEE_SUCCESS) {
         res = ta_backend_execute_partition(ta_backend_default(), model, part);
@@ -210,6 +317,90 @@ TEE_Result confinfer_ta_prepare_model_image(void *sess_ctx,
     return res;
 }
 
+// 检查协议请求
+// -> 确认模型尚未加载
+// -> 调用 span_map_image
+// -> 检查 PTA 返回的地址和映射范围
+// -> ta_model_attach_image
+// -> 返回 prepare response
+// 其中 ta_model_attach_image 只解析并建立 runtime 视图
+// image_data 直接指向 ta_vaddr 不会执行 TEE_Malloc 或 TEE_MemMove 复制整块模型 Image
+TEE_Result confinfer_ta_prepare_model_image_trustspan(void *sess_ctx,
+                                                      uint32_t param_types,
+                                                      TEE_Param params[4])
+{
+    const uint32_t exp_param_types =
+        TEE_PARAM_TYPES(TEE_PARAM_TYPE_MEMREF_INPUT,
+                        TEE_PARAM_TYPE_MEMREF_OUTPUT,
+                        TEE_PARAM_TYPE_NONE,
+                        TEE_PARAM_TYPE_NONE);
+    const confinfer_prepare_model_image_trustspan_req_t *req = NULL;
+    confinfer_prepare_model_image_rsp_t *rsp = NULL;
+    ta_model_t *model = NULL;
+    uint64_t ta_vaddr = 0;
+    uint64_t mapped_size = 0;
+    bool region_released = true;
+    TEE_Result res = TEE_SUCCESS;
+
+    (void)sess_ctx;
+
+    if (param_types != exp_param_types ||
+        params[0].memref.size != sizeof(*req) ||
+        params[1].memref.size < sizeof(*rsp)) {
+        return TEE_ERROR_BAD_PARAMETERS;
+    }
+
+    req = (const confinfer_prepare_model_image_trustspan_req_t *)
+        params[0].memref.buffer;
+    rsp = (confinfer_prepare_model_image_rsp_t *)params[1].memref.buffer;
+    if (!req || !rsp || req->version != CONFINFER_PROTOCOL_VERSION ||
+        req->model_id == CONFINFER_INVALID_MODEL_ID || !req->image_size ||
+        !req->phys_addr || req->region_size < req->image_size ||
+        (uint64_t)(size_t)req->region_size != req->region_size) {
+        return TEE_ERROR_BAD_PARAMETERS;
+    }
+
+    TEE_MemFill(rsp, 0, sizeof(*rsp));
+    rsp->version = CONFINFER_PROTOCOL_VERSION;
+    rsp->model_id = req->model_id;
+
+    res = ta_model_ensure(req->model_id, &model);
+    if (res == TEE_SUCCESS && model->image_data) {
+        res = TEE_ERROR_BAD_STATE;
+        region_released = false;
+    }
+    if (res == TEE_SUCCESS) {
+        region_released = false;
+        res = span_map_image(req->phys_addr, req->region_size,
+                             &ta_vaddr, &mapped_size, &region_released);
+    }
+    if (res == TEE_SUCCESS &&
+        (!ta_vaddr || mapped_size < req->image_size ||
+         (uint64_t)(size_t)mapped_size != mapped_size)) {
+        res = TEE_ERROR_BAD_FORMAT;
+    }
+    if (res == TEE_SUCCESS) {
+        res = ta_model_attach_image(model, (void *)(uintptr_t)ta_vaddr,
+                                    req->image_size, (size_t)mapped_size);
+    }
+    // 若 PTA 映射已成功 但 Image 校验或 runtime 展开失败
+    // 仍必须执行完整 release 撤销映射和 TZC 保护
+    if (res != TEE_SUCCESS && ta_vaddr) {
+        if (span_release_image(ta_vaddr, mapped_size) == TEE_SUCCESS) {
+            region_released = true;
+        }
+    }
+
+    rsp->status = (res == TEE_SUCCESS) ? CONFINFER_STATUS_OK :
+                                         CONFINFER_STATUS_BAD_REQUEST;
+    rsp->loaded_image_size = (res == TEE_SUCCESS) ? req->image_size : 0;
+    if (res != TEE_SUCCESS && region_released) {
+        rsp->flags |= CONFINFER_PREPARE_MODEL_IMAGE_RSP_FLAG_REGION_RELEASED;
+    }
+    params[1].memref.size = sizeof(*rsp);
+    return res;
+}
+
 TEE_Result confinfer_ta_prepare_model_image_begin(void *sess_ctx,
                                                   uint32_t param_types,
                                                   TEE_Param params[4])
@@ -238,6 +429,12 @@ TEE_Result confinfer_ta_prepare_model_image_begin(void *sess_ctx,
         return TEE_ERROR_BAD_PARAMETERS;
     }
 
+    /*
+     * 先处理可能存在的旧暂存状态
+     * 再预留完整暂存缓冲区
+     * 因为默认 bridge 选择先接收完整 image 再解析模型
+     * 而不在 chunk 到达时逐步解析
+     */
     reset_prepare_image_upload(session);
     if (req->total_image_size > 0) {
         session->prepare_image_upload.buffer =
@@ -297,6 +494,11 @@ TEE_Result confinfer_ta_prepare_model_image_chunk(void *sess_ctx,
         return TEE_ERROR_BAD_PARAMETERS;
     }
 
+    /*
+     * chunk 必须严格按单调 offset 到达
+     * 这样可以将暂存缓冲区视为线性字节流
+     * 接收端无需实现随机 offset 重组逻辑
+     */
     if (req->chunk_size > 0) {
         TEE_MemMove(upload->buffer + req->chunk_offset, chunk_data, req->chunk_size);
     }
@@ -352,6 +554,11 @@ TEE_Result confinfer_ta_prepare_model_image_end(void *sess_ctx,
     rsp->version = CONFINFER_PROTOCOL_VERSION;
     rsp->model_id = req->model_id;
 
+    /*
+     * 在完整 image 到达前 不改变 runtime 所有权
+     * begin 与 chunk 只构造完整字节缓冲区
+     * end 是传输状态转换为模型状态的唯一边界
+     */
     res = ta_model_ensure(req->model_id, &model);
     if (res == TEE_SUCCESS) {
         res = ta_model_load_image(model, upload->buffer, upload->total_size);
@@ -738,6 +945,22 @@ TEE_Result confinfer_ta_unload_model(void *sess_ctx,
         return TEE_SUCCESS;
     }
 
+    // confinfer_ta_unload_model 现在区分两类 Image：
+    // - image_owned == 1：默认 bridge 上传的 Image 由 runtime 内部 TEE_Free
+    // - image_owned == 0：TrustSpan Image 先完成 span_release_image 再执行 ta_model_release
+    if (!model->image_owned && model->image_data) {
+        TEE_Result res = span_release_image((uint64_t)(uintptr_t)model->image_data,
+                                            model->image_mapping_size);
+
+        if (res != TEE_SUCCESS) {
+            rsp->status = CONFINFER_STATUS_BAD_REQUEST;
+            params[1].memref.size = sizeof(*rsp);
+            return res;
+        }
+    }
+
+    // 两种 Image 最后统一销毁 runtime 视图和 ta_model_t
+    // 只有 image_owned 为 1 时 runtime 才会 TEE_Free Image 字节
     ta_model_release(model);
     rsp->status = CONFINFER_STATUS_OK;
     params[1].memref.size = sizeof(*rsp);

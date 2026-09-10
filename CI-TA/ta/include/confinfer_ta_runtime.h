@@ -21,6 +21,12 @@ typedef struct ta_param ta_param_t;
 typedef struct ta_partition ta_partition_t;
 typedef struct ta_model ta_model_t;
 
+/*
+ * 先建立带类型的 image 视图 再展开 runtime 对象
+ * 这样可以集中校验一次 offset
+ * 后续从 image 支撑的指针建立运行时语义
+ * 而不复制每一张结构表
+ */
 typedef struct {
     const confinfer_partition_image_header_t *header;
     const confinfer_model_image_layer_desc_t *layers;
@@ -48,6 +54,10 @@ typedef struct {
 } ta_data_t;
 
 struct ta_value {
+    /*
+     * 即使 data 可以指回 image 仍保留 ta_value 运行时语义对象
+     * 因为执行辅助函数仍需要稳定且带类型的句柄
+     */
     confinfer_value_id_t value_id;
     confinfer_layer_id_t producer_layer_id;
     uint32_t output_index;
@@ -67,6 +77,11 @@ typedef struct {
 } ta_layer_attr_t;
 
 struct ta_layer {
+    /*
+     * 此处不嵌入复制后的 input output param 数组
+     * 而是保留 ref 与 param 切片起点
+     * 从而让 layer 保持为 image 布局上的轻量运行时视图
+     */
     confinfer_layer_id_t layer_id;
     uint32_t layer_type;
     uint32_t layer_flags;
@@ -91,6 +106,11 @@ struct ta_param {
 };
 
 struct ta_partition {
+    /*
+     * 每个 partition 都需要展开 因为执行以 partition 为作用域
+     * 此对象向 backend 提供清晰的运行时图视图
+     * 同时静态字节仍保留在 model 所拥有的 image 内
+     */
     confinfer_partition_id_t partition_id;
     uint32_t domain;
     uint32_t unit_type;
@@ -107,6 +127,11 @@ struct ta_partition {
 };
 
 struct ta_model {
+    /*
+     * model 拥有完整 image 与 partition 运行时视图
+     * 这一所有权边界使 session 上传缓冲区保持短暂
+     * 并让 unload 逻辑保持明确
+     */
     confinfer_model_id_t model_id;
     uint32_t flags;
     uint32_t partition_count;
@@ -115,6 +140,8 @@ struct ta_model {
     ta_partition_t *partitions;
     void *image_data;
     uint32_t image_size;
+    uint32_t image_owned;
+    size_t image_mapping_size;
 };
 
 typedef struct {
@@ -122,6 +149,11 @@ typedef struct {
     ta_model_t *models[CONFINFER_TA_MAX_MODELS];
 } ta_model_store_t;
 
+/*
+ * runtime API 分为两层
+ * model image 访问函数回答字节位于哪里
+ * 展开函数回答如何由这些字节建立执行对象
+ */
 void ta_runtime_init(void);
 void ta_runtime_deinit(void);
 ta_model_store_t *ta_runtime_store(void);
@@ -131,6 +163,10 @@ TEE_Result ta_model_ensure(confinfer_model_id_t model_id, ta_model_t **out_model
 TEE_Result ta_model_load_image(ta_model_t *model,
                                const void *image_data,
                                size_t image_size);
+TEE_Result ta_model_attach_image(ta_model_t *model,
+                                 void *image_data,
+                                 size_t image_size,
+                                 size_t image_mapping_size);
 void ta_model_release(ta_model_t *model);
 
 const confinfer_model_image_header_t *ta_model_image_header(const ta_model_t *model);

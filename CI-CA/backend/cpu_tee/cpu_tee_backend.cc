@@ -123,19 +123,6 @@ Backend_CPU_TEE::~Backend_CPU_TEE()
 #endif
 }
 
-bool Backend_CPU_TEE::openBridge(uint32_t *err_origin)
-{
-#if ENABLE_TEE_BRIDGE
-    EXIT_ERROR_CHECK_EQ(nullptr, _bridge, "TEE bridge is nullptr");
-    return _bridge->open(err_origin);
-#else
-    if (nullptr != err_origin) {
-        *err_origin = 0;
-    }
-    return false;
-#endif
-}
-
 bool Backend_CPU_TEE::isBridgeOpened() const
 {
 #if ENABLE_TEE_BRIDGE
@@ -150,6 +137,7 @@ bool Backend_CPU_TEE::hasRuntime(confinfer_model_id_t model_id) const
     return _runtimeLoaded && _loadedModelId == model_id;
 }
 
+// Layer* layer 版本的 prepare / execute 仅仅用于占位 
 void Backend_CPU_TEE::prepare(Layer* layer)
 {
     EXIT_ERROR_CHECK_EQ(nullptr, layer, "Layer is nullptr");
@@ -168,16 +156,17 @@ void Backend_CPU_TEE::prepare(const ExecPartition& part, ExecContext_t* ctx)
     uint32_t err_origin = 0;
 
     validate_prepare_inputs(part, ctx);
-    EXIT_ERROR_CHECK_EQ(false, openBridge(&err_origin),
-                        "Backend_CPU_TEE failed to open TEE bridge");
-    if (hasRuntime(ctx->modelId)) {
+    if (hasRuntime(ctx->modelId) && isBridgeOpened()) {
         return;
     }
-
     if (_runtimeLoaded && _loadedModelId != ctx->modelId) {
         resetRuntime(ctx, false);
     }
-
+    EXIT_ERROR_CHECK_EQ(nullptr, _bridge, "Backend_CPU_TEE bridge is nullptr");
+    if (!isBridgeOpened()) {
+        EXIT_ERROR_CHECK_EQ(false, _bridge->open(&err_origin),
+                            "Backend_CPU_TEE failed to open TEE bridge");
+    }
     EXIT_ERROR_CHECK_EQ(0U, count_tee_partitions(*ctx->parts),
                         "ExecContext parts contains no TEE partitions");
     EXIT_ERROR_CHECK_EQ(false, loadRuntime(ctx->modelId, *ctx->parts),
@@ -216,13 +205,13 @@ bool Backend_CPU_TEE::loadRuntime(confinfer_model_id_t model_id,
                                   const std::vector<ExecPartition>& parts)
 {
 #if ENABLE_TEE_BRIDGE
-    if (0 == count_tee_partitions(parts)) {
-        return true;
-    }
-
-    EXIT_ERROR_CHECK_EQ(false, openBridge(nullptr),
-                        "Backend_CPU_TEE failed to open TEE bridge");
-    EXIT_ERROR_CHECK_EQ(nullptr, _bridge, "Backend_CPU_TEE bridge is nullptr");
+    // 这里的校验逻辑交给调用链的上层了
+    // if (0 == count_tee_partitions(parts)) {
+    //     return true;
+    // }
+    // EXIT_ERROR_CHECK_EQ(nullptr, _bridge, "Backend_CPU_TEE bridge is nullptr");
+    // EXIT_ERROR_CHECK_EQ(false, isBridgeOpened(),
+    //                     "Backend_CPU_TEE loadRuntime requires opened TEE bridge");
 
     _runtimeImage = _imageBuilder.build(model_id, parts);
     EXIT_ERROR_CHECK_EQ(false,

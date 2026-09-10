@@ -4,6 +4,11 @@
 #include <tee_internal_api.h>
 #include <confinfer_protocol.h>
 
+/*
+ * 上传状态放在 session 作用域
+ * 因为分块传输是短暂状态 它属于一个调用方 session
+ * 而不属于长期存在的模型运行时
+ */
 typedef struct {
     confinfer_model_id_t model_id;
     uint8_t *buffer;
@@ -30,7 +35,13 @@ typedef struct {
     confinfer_exec_partition_upload_t exec_partition_upload;
 } confinfer_ta_session_t;
 
+/*
+ * 这里同时保留单次与分块命令入口
+ * 由 host 决定使用哪条路径
+ * 下层 runtime 不应关心字节以何种方式到达
+ */
 TEE_Result confinfer_ta_prepare_model_image(void *sess_ctx, uint32_t param_types, TEE_Param params[4]);
+TEE_Result confinfer_ta_prepare_model_image_trustspan(void *sess_ctx, uint32_t param_types, TEE_Param params[4]);
 TEE_Result confinfer_ta_prepare_model_image_begin(void *sess_ctx, uint32_t param_types, TEE_Param params[4]);
 TEE_Result confinfer_ta_prepare_model_image_chunk(void *sess_ctx, uint32_t param_types, TEE_Param params[4]);
 TEE_Result confinfer_ta_prepare_model_image_end(void *sess_ctx, uint32_t param_types, TEE_Param params[4]);

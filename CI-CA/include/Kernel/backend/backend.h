@@ -86,7 +86,6 @@ private:
     bool loadRuntime(confinfer_model_id_t model_id,
                      const std::vector<ExecPartition>& parts);
     bool unloadRuntime(confinfer_model_id_t model_id, bool strict);
-    bool openBridge(uint32_t *err_origin = nullptr);
 
     bool hasRuntime(confinfer_model_id_t model_id) const;
     bool isBridgeOpened() const;

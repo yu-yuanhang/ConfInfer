@@ -24,6 +24,7 @@ enum confinfer_command_id {
     CONFINFER_CMD_PREPARE_MODEL_IMAGE_BEGIN = 0x10,
     CONFINFER_CMD_PREPARE_MODEL_IMAGE_CHUNK = 0x11,
     CONFINFER_CMD_PREPARE_MODEL_IMAGE_END = 0x12,
+    CONFINFER_CMD_PREPARE_MODEL_IMAGE_TRUSTSPAN = 0x13,
     CONFINFER_CMD_EXEC_PARTITION_BEGIN = 0x20,
     CONFINFER_CMD_EXEC_PARTITION_INPUT_CHUNK = 0x21,
     CONFINFER_CMD_EXEC_PARTITION_RUN = 0x22,
@@ -95,6 +96,15 @@ typedef struct {
 typedef struct {
     uint32_t version;
     confinfer_model_id_t model_id;
+    uint32_t image_size;
+    uint32_t flags;
+    uint64_t phys_addr;
+    uint64_t region_size;
+} confinfer_prepare_model_image_trustspan_req_t;
+
+typedef struct {
+    uint32_t version;
+    confinfer_model_id_t model_id;
     uint32_t total_image_size;
     uint32_t flags;
 } confinfer_prepare_model_image_begin_req_t;
@@ -138,9 +148,11 @@ typedef struct {
     uint32_t status;
     confinfer_model_id_t model_id;
     uint32_t loaded_image_size;
-    uint32_t reserved0;
+    uint32_t flags;
     uint32_t reserved1;
 } confinfer_prepare_model_image_rsp_t;
+
+#define CONFINFER_PREPARE_MODEL_IMAGE_RSP_FLAG_REGION_RELEASED (1U << 0)
 
 typedef struct {
     uint32_t version;

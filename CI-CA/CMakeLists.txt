@@ -63,7 +63,7 @@ set(CMAKE_CXX_STANDARD 20)
 ###########################################################################
 # cmake -DLOGCPP_EXT=1 -DCMAKE_PREFIX_PATH="$(python -c 'import torch.utils; print(torch.utils.cmake_prefix_path)')" ..
 # cmake -DLOGCPP_EXT=1 -DRELEASE=0 -DENABLE_TEE_BRIDGE=1 ..
-# cmake -DLOGCPP_EXT=1 -DRELEASE=0 -DENABLE_TEE_BRIDGE=1 -DTRUSTSPAN=1 ..
+# cmake -DLOGCPP_EXT=0 -DRELEASE=0 -DENABLE_TEE_BRIDGE=1 -DTRUSTSPAN=1 ..
 # cmake -DLOGCPP_EXT=0 -DRELEASE=0 -DENABLE_TEE_BRIDGE=1 -DTRUSTSPAN=0 ..
 
 if(NOT DEFINED LOGCPP_EXT)
@@ -154,7 +154,8 @@ if(ENABLE_TEE_BRIDGE EQUAL 1)
     list(APPEND MAIN_SOURCES_CPP
         "${CMAKE_CURRENT_SOURCE_DIR}/protocol/bridges/ExecBridge_TEE.cc")
     list(APPEND MAIN_SOURCES_C
-        "${CMAKE_CURRENT_SOURCE_DIR}/../CI-TA/host/confinfer_host.c")
+        "${CMAKE_CURRENT_SOURCE_DIR}/../CI-TA/host/confinfer_host.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../CI-TA/host/confinfer_host_internal.c")
 endif()
 
 message(STATUS "MAIN_SOURCES_CPP = ${MAIN_SOURCES_CPP}")
@@ -183,6 +184,10 @@ if(ENABLE_TEE_BRIDGE EQUAL 1)
                     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include/Kernel/bridges
                     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../CI-TA/host/include
                     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../CI-TA/ta/include)
+    if(TRUSTSPAN EQUAL 1)
+        target_include_directories(${PROJECT_NAME}
+                        PRIVATE ${CONFINFER_REPO_ROOT}/CI/TrustSpan/linux/include/uapi/misc)
+    endif()
     if(CONFINFER_USE_BUILDROOT_AARCH64 AND CMAKE_SYSROOT)
         target_include_directories(${PROJECT_NAME}
                         PUBLIC ${CMAKE_SYSROOT}/usr/include)
